@@ -1,0 +1,64 @@
+server:
+  port: 8080
+  error:
+    include-message: always
+
+spring:
+  application:
+    name: nsbh
+  datasource:
+    url: jdbc:h2:mem:nsbh;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driverClassName: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+logging:
+  level:
+    root: INFO
+    # 你可以在开发时打开
+    # org.hibernate.SQL: DEBUG
+    # org.hibernate.orm.jdbc.bind: TRACE
+
+nsbh:
+  llm:
+    provider: mock # mock | openai
+    modelDefault: gpt-4.1-mini
+    baseUrl: https://api.openai.com
+    apiKey: ${OPENAI_API_KEY:} # Milestone 1 可不填
+    timeoutMs: 15000
+  agent:
+    maxToolRounds: 2
+  memory:
+    window: 20
+    compactAfter: 40
+    systemPrompt: "You are NSBH assistant. Keep answers concise and accurate."
+  tools:
+    timeoutMs: 3000
+    maxInputBytes: 8192
+    maxOutputBytes: 32768
+    allowed:
+      - time
+      # - http_get  # Milestone 2 再打开
+  permissions:
+    granted:
+      # - NET_HTTP  # http_get 用到再开
+      # - FS_READ
+      # - FS_WRITE
+      # - SHELL     # v1 禁用
+scheduler:
+  dailySummary:
+    enabled: false
+    cron: "0 0 9 * * *"

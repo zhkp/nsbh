@@ -1,0 +1,12 @@
+spring:
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/nsbh}
+    username: ${POSTGRES_USER:nsbh}
+    password: ${POSTGRES_PASSWORD:nsbh}
+    driverClassName: org.postgresql.Driver
+  h2:
+    console:
+      enabled: false
+  jpa:
+    hibernate:
+      ddl-auto: validate
