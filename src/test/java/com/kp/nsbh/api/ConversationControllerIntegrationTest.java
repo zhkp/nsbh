@@ -3,6 +3,7 @@ package com.kp.nsbh.api;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
@@ -59,5 +60,52 @@ class ConversationControllerIntegrationTest {
                 .jsonPath("$[0].role").isEqualTo("USER")
                 .jsonPath("$[1].role").isEqualTo("TOOL")
                 .jsonPath("$[2].role").isEqualTo("ASSISTANT");
+    }
+
+    @Test
+    void chatWithoutToolShouldReturnAssistantOnly() throws Exception {
+        byte[] createBytes = webTestClient.post()
+                .uri("/api/v1/conversations")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.conversationId").isNotEmpty()
+                .returnResult()
+                .getResponseBodyContent();
+
+        String createBody = createBytes == null ? "{}" : new String(createBytes, StandardCharsets.UTF_8);
+        JsonNode createJson = objectMapper.readTree(createBody);
+        String conversationId = createJson.get("conversationId").asText();
+
+        webTestClient.post()
+                .uri("/api/v1/conversations/{id}/chat", conversationId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"message\":\"hello\"}")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.assistantMessage").isNotEmpty()
+                .jsonPath("$.toolCalls.length()").isEqualTo(0);
+    }
+
+    @Test
+    void shouldReturn404ForUnknownConversation() {
+        String randomId = UUID.randomUUID().toString();
+
+        webTestClient.get()
+                .uri("/api/v1/conversations/{id}/messages", randomId)
+                .exchange()
+                .expectStatus().isNotFound()
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(404);
+
+        webTestClient.post()
+                .uri("/api/v1/conversations/{id}/chat", randomId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"message\":\"hello\"}")
+                .exchange()
+                .expectStatus().isNotFound()
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(404);
     }
 }

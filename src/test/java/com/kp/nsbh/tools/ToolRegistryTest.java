@@ -1,6 +1,7 @@
 package com.kp.nsbh.tools;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -29,5 +30,42 @@ class ToolRegistryTest {
         assertEquals(List.of(), metadata.requiredPermissions());
         assertNotNull(registry.findTool("time"));
         assertNotNull(registry.findTool("http_get"));
+    }
+
+    @Test
+    void shouldFailWhenToolMissingAnnotation() {
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> new ToolRegistry(List.of(new MissingAnnotationTool())));
+        assertTrue(ex.getMessage().contains("missing @NsbhTool"));
+    }
+
+    @Test
+    void shouldFailWhenToolNameDuplicated() {
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> new ToolRegistry(List.of(new DuplicateOne(), new DuplicateTwo())));
+        assertTrue(ex.getMessage().contains("Duplicate tool name"));
+    }
+
+    static class MissingAnnotationTool implements Tool {
+        @Override
+        public reactor.core.publisher.Mono<String> execute(String inputJson) {
+            return reactor.core.publisher.Mono.just("x");
+        }
+    }
+
+    @NsbhTool(name = "dup", description = "one")
+    static class DuplicateOne implements Tool {
+        @Override
+        public reactor.core.publisher.Mono<String> execute(String inputJson) {
+            return reactor.core.publisher.Mono.just("1");
+        }
+    }
+
+    @NsbhTool(name = "dup", description = "two")
+    static class DuplicateTwo implements Tool {
+        @Override
+        public reactor.core.publisher.Mono<String> execute(String inputJson) {
+            return reactor.core.publisher.Mono.just("2");
+        }
     }
 }
