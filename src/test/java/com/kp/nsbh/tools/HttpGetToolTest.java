@@ -14,7 +14,7 @@ class HttpGetToolTest {
         HttpGetTool tool = new HttpGetTool(new ObjectMapper(), new NsbhProperties());
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> tool.execute("{\"url\":\"ftp://example.com/file\"}"));
+                () -> tool.execute("{\"url\":\"ftp://example.com/file\"}").block());
         assertTrue(ex.getMessage().contains("http/https"));
     }
 
@@ -23,7 +23,7 @@ class HttpGetToolTest {
         HttpGetTool tool = new HttpGetTool(new ObjectMapper(), new NsbhProperties());
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> tool.execute("{\"url\":\"http://localhost:8080\"}"));
+                () -> tool.execute("{\"url\":\"http://localhost:8080\"}").block());
         assertTrue(ex.getMessage().contains("Private"));
     }
 
@@ -32,7 +32,7 @@ class HttpGetToolTest {
         HttpGetTool tool = new HttpGetTool(new ObjectMapper(), new NsbhProperties());
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> tool.execute("{\"url\":\"http://127.0.0.1:8080\"}"));
+                () -> tool.execute("{\"url\":\"http://127.0.0.1:8080\"}").block());
         assertTrue(ex.getMessage().contains("Private IP"));
     }
 
@@ -41,7 +41,7 @@ class HttpGetToolTest {
         HttpGetTool tool = new HttpGetTool(new ObjectMapper(), new NsbhProperties());
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> tool.execute("{\"url\":\"http://[::1]:8080\"}"));
+                () -> tool.execute("{\"url\":\"http://[::1]:8080\"}").block());
         assertTrue(ex.getMessage().contains("Private IP"));
     }
 }

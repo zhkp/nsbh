@@ -1,220 +1,266 @@
-# Nanobot Spring Boot Host (NSBH) — SPEC
+  # NSBH WebFlux SPEC（Complete Reactive Edition）
 
-## 0. Goal
-Build a lightweight Spring Boot application that hosts a “Nanobot-style” agent:
-- Exposes a simple chat API
-- Supports tool calling with a strict permission model
-- Persists conversation memory
-- Supports scheduled tasks
+  ## 0. Goal
 
-The emphasis is: **clarity, debuggability, minimal abstraction**, and **secure tool execution**.
+  将当前 NSBH 从 Spring MVC + JPA 架构迁移为 端到端 Reactive 架构：
 
-## 1. Non-goals (for v1)
-- Multi-agent orchestration / agent swarms
-- Plugin marketplace / dynamic code loading
-- Distributed execution / microservices
-- Full feature parity with Python Nanobot
+  - API 层使用 Spring WebFlux
+  - 数据层使用 R2DBC（替代 JPA）
+  - LLM/工具/调度链路全部非阻塞
+  - 保持现有功能与安全模型
+  - 提升并发能力与资源利用率
 
-## 2. Tech Stack
-- Java 21 (or 17 if you prefer), Spring Boot 3.x
-- Maven
-- JSON: Jackson
-- Persistence: H2 (dev) + optional Postgres profile
-- Optional: Redis (future milestone, not required for v1)
-- API Docs: springdoc-openapi (Swagger UI)
-- HTTP Client: Spring WebClient
-- Config: application.yml + env vars
+  ## 1. Non-goals
 
-## 3. Domain Model
-### 3.1 Core types
-- Conversation
-  - id (UUID)
-  - createdAt, updatedAt
-- Message
-  - id (UUID)
-  - conversationId
-  - role: SYSTEM | USER | ASSISTANT | TOOL
-  - type: NORMAL | SUMMARY
-  - content (text)
-  - toolName (nullable)
-  - toolCallId (nullable)
-  - createdAt
-- Tool
-  - name (string)
-  - description (string)
-  - schema (JSON Schema-like metadata)
-  - permission requirements
+  - 不做跨服务拆分（仍为单体）
+  - 不做多租户、分布式事务
+  - 不在 v1 强制引入事件总线
+  - 不做 UI 改造
 
-### 3.2 Tool permission model (MUST)
-Default deny.
-Each tool declares required permissions:
-- NET_HTTP (outbound http/https)
-- FS_READ (read-only file access)
-- FS_WRITE (write access)
-- SHELL (execute commands)  **DISABLED IN v1** (no shell tools)
+  ## 2. Tech Stack
 
-Enforcement:
-- Global allowlist in config: `tools.allowed: [time, http_get, ...]`
-- Per-tool required permissions must be satisfied by config `permissions.granted: [NET_HTTP, ...]`
-- If not allowed or permissions missing => tool call is rejected with a structured error message.
+  - Java 21
+  - Spring Boot 3.x + Spring WebFlux
+  - Reactor (Mono, Flux)
+  - Spring Data R2DBC
+  - R2DBC driver:
+      - H2: r2dbc-h2（开发）
+      - PostgreSQL: r2dbc-postgresql（生产）
+  - Flyway（JDBC sidecar，仅做 schema migration）
+  - WebClient（LLM HTTP）
+  - springdoc-openapi（WebFlux starter）
+  - Test: JUnit5 + WebTestClient + Testcontainers
 
-Safety requirements:
-- Tool execution must have:
-  - timeout (default 3s, configurable)
-  - max payload size for inputs/outputs
-  - structured audit logs (tool name, args hash, duration, status)
+  ## 3. Architecture Principles
 
-## 4. API Design
-Base path: `/api/v1`
+  1. 端到端 non-blocking，禁止在主链路调用 .block()。
+  2. 所有 I/O（DB/HTTP/工具网络）必须是 reactive。
+  3. 阻塞代码必须显式隔离（如必须存在，放 boundedElastic 并标记 TODO）。
+  4. 错误模型与 requestId 语义保持兼容。
+  5. 安全策略（tools allowlist/permission/timeout/size limit）保持不降级。
 
-### 4.1 Create conversation
-POST `/conversations`
-Response:
-- conversationId
+  ## 4. Domain Model
 
-### 4.2 Chat (send a message)
-POST `/conversations/{id}/chat`
-Request:
-{
-  "message": "string",
-  "model": "gpt-4.1-mini | gpt-4.1 | ... (config default allowed)"
-}
+  与现有保持一致：
 
-Response:
-{
-  "conversationId": "...",
-  "assistantMessage": "string",
-  "toolCalls": [
-    {
-      "toolName": "time",
-      "status": "SUCCESS|REJECTED|FAILED",
-      "result": "string"
-    }
-  ]
-}
+  ### 4.1 Entities
 
-Rules:
-- Append user message to memory
-- Run agent loop:
-  - build prompt from system + recent messages (last N)
-  - call LLM
-  - if tool call requested, validate allowlist + permissions + schema
-  - run tool with timeout
-  - append tool result to memory
-  - call LLM again to produce final assistant message
-- Max tool call rounds: 2 (configurable)
+  - Conversation
+      - id (UUID)
+      - createdAt, updatedAt
+  - Message
+      - id (UUID)
+      - conversationId
+      - role: SYSTEM | USER | ASSISTANT | TOOL
+      - type: NORMAL | SUMMARY | DAILY_SUMMARY
+      - content
+      - toolName (nullable)
+      - toolCallId (nullable)
+      - createdAt
 
-### 4.3 Get conversation messages
-GET `/conversations/{id}/messages`
+  ### 4.2 Repository（Reactive）
 
-### 4.4 List tools
-GET `/tools`
-Returns tool name + description + schema + permissions
+  - ReactiveConversationRepository
+  - ReactiveMessageRepository
+  - 返回类型统一 Mono<T> / Flux<T>
 
-## 5. LLM Provider (v1)
-Implement `LlmClient` interface with one provider:
-- OpenAI Chat Completions (or Responses API if you prefer)
+  ## 5. API Design (Reactive)
 
-Config:
-- `llm.provider=openai`
-- `llm.apiKey` from env
-- `llm.baseUrl` default official
-- `llm.modelDefault`
+  Base path: /api/v1（保持不变）
 
-Requirements:
-- request/response logging WITHOUT leaking API keys
-- graceful error mapping to API responses
+  - POST /conversations
+  - POST /conversations/{id}/chat
+  - GET /conversations/{id}/messages
+  - GET /tools
 
-## 6. Tools (v1)
-Implement at least:
-1) `time`
-- returns current server time in ISO-8601 + timezone
+  Controller 返回：
 
-2) `http_get` (optional in Milestone 2; can be delayed)
-- input: { "url": "https://..." }
-- only allow http/https
-- deny private IP ranges (basic SSRF protection)
-- max response size limit
-- timeout 3s
+  - 单对象：Mono<ResponseDto>
+  - 列表：Flux<Dto> 或 Mono<List<Dto>>（建议 Flux）
 
-## 7. Memory & Persistence (v1)
-- Store conversations & messages in DB (H2)
-- Use Spring Data JPA
-- Prompt uses last N messages (config: `memory.window=20`)
-- Memory compaction (Milestone 3 Step 1):
-  - Config: `memory.compactAfter=40`
-  - When NORMAL messages exceed threshold, call LLM summarize
-  - Persist summary as SYSTEM message with type `SUMMARY` (update latest summary)
-  - Prompt uses: system prompt + latest summary + last N NORMAL messages
-- Provide schema migrations (Flyway optional)
+  ## 6. LLM Provider (Reactive)
 
-## 8. Scheduler (v1.5 / Milestone 3)
-Provide a minimal scheduled task system:
-- A scheduled job `daily_summary` (disabled by default)
-- When enabled, at 09:00 local time:
-  - summarize yesterday’s conversations (or last 24h)
-  - store summary as a SYSTEM message per conversation
+  定义 ReactiveLlmClient：
 
-Config:
-- `scheduler.dailySummary.enabled=false`
-- `scheduler.dailySummary.cron=0 0 9 * * *`
+  - Mono<LlmReply> firstReply(...)
+  - Mono<String> finalReply(...)
+  - Mono<String> summarize(...)
 
-## 9. Observability
-- Structured logs (JSON preferred)
-- Include requestId (trace id) per request
-- Tool audit logs separate logger name: `TOOL_AUDIT`
+  实现：
 
-## 10. Testing (MUST)
-- Unit tests:
-  - tool permission enforcement
-  - tool timeout behavior
+  - MockReactiveLlmClient
+  - OpenAiReactiveLlmClient（WebClient，全链路无 block）
+
+  配置：
+
+  - nsbh.llm.provider=mock|openai
+  - nsbh.llm.apiKey=${OPENAI_API_KEY:}
+  - nsbh.llm.timeoutMs
+
+  要求：
+
+  - 错误映射明确（401/429/5xx/timeout）
+  - 不打印 secrets
+
+  ## 7. Tools (Reactive)
+
+  定义 ReactiveTool：
+
+  - Mono<String> execute(String inputJson)
+
+  工具：
+
+  1. time（即时返回）
+  2. http_get（Reactive HTTP client；SSRF 防护、timeout、max output）
+
+  工具执行服务 ReactiveToolService：
+
+  - allowlist 检查
+  - permission 检查
+  - input/output bytes 限制
+  - timeout（timeout(Duration)）
+  - 审计日志（TOOL_AUDIT）
+
+  ## 8. Memory & Prompt
+
+  - memory.window
+  - memory.compactAfter
+  - Prompt 构建：
+      - system prompt
+      - latest SUMMARY
+      - last N NORMAL messages
+  - 超阈值触发 summary compaction：
+      - 调 ReactiveLlmClient.summarize
+      - 写入/更新 SUMMARY
+
+  ## 9. Scheduler (Reactive)
+
+  - scheduler.dailySummary.enabled=false
+  - scheduler.dailySummary.cron=...
+  - 调度任务：
+      - 找最近 24h 活跃会话
+      - summarize
+      - 写 DAILY_SUMMARY
+  - 生成 jobRunId
+  - 日志 JSON 输出
+
+  ## 10. Observability
+
+  - 全局 JSON log（保留）
+  - requestId（WebFlux filter + Reactor Context + MDC bridge）
+  - TOOL_AUDIT 固定键：
+      - requestId, conversationId, toolName, status, reason, durationMs
+
+  ## 11. Security Requirements
+
+  - Default deny tool execution
+  - 强制：
+      - nsbh.tools.allowed
+      - nsbh.permissions.granted
+  - SSRF 防护不可回退
+  - 禁止 shell tool（v1）
+
+  ## 12. Data & Migration
+
+  - Flyway 使用 JDBC DataSource 做 schema migration
+  - 业务读写走 R2DBC
+  - H2 开发 + Postgres profile
+  - schema 与现有版本兼容
+
+  ## 13. Testing (MUST)
+
+  ### 13.1 Unit
+
+  - Reactive tool permission enforcement
+  - timeout / output limit
   - prompt window selection
-- Integration tests:
-  - POST chat returns 200
-  - messages persisted
-Mock LLM client for tests.
+  - provider switch
 
-## 11. Milestones & Acceptance Criteria
+  ### 13.2 Integration
 
-### Milestone 1 — Minimal runnable
-Deliver:
-- Spring Boot app runs
-- POST create conversation
-- POST chat uses MockLlmClient (no real API key needed)
-- Tool: `time`
-Acceptance:
-- `mvn test` passes
-- `curl` chat returns assistant message
-- messages stored and retrievable
+  - WebTestClient 验证 chat API 200
+  - message persistence
+  - requestId presence
+  - tool rejection reason mapping
+  - summary compaction
+  - scheduler manual invoke
 
-### Milestone 2 — Real LLM + Tool registry
-Deliver:
-- OpenAI LLM client implementation behind interface
-- Tool registry via Spring beans + annotation scanning
-- List tools endpoint
-- Permission model enforced + audit logs
-Acceptance:
-- With `OPENAI_API_KEY` set, chat works end-to-end
-- Forbidden tool call returns REJECTED with reason
+  ### 13.3 Postgres
 
-### Milestone 3 — Memory + Scheduler
-Deliver:
-- JPA persistence finalized
-- Daily summary scheduled task behind config flag
-Acceptance:
-- Enable flag => summary messages appear
-- Disable flag => no scheduled execution
+  - Testcontainers + R2DBC + Flyway
+  - 无 Docker 时 skip（可配置）
 
-## 12. Repo Layout (suggested)
-- src/main/java/.../api (controllers, dto)
-- src/main/java/.../agent (prompting, loop)
-- src/main/java/.../llm (client interface + providers)
-- src/main/java/.../tools (tool interfaces + implementations)
-- src/main/java/.../memory (repositories, entities)
-- src/test/java/... (unit + integration)
+  ## 14. Milestones & Acceptance
 
-## 13. Security Notes
-- No shell execution in v1
-- Avoid SSRF in http_get
-- Do not log secrets
-- Limit tool output size
+  ### Milestone W1 — Reactive Baseline
+
+  Deliver:
+
+  - WebFlux controllers
+  - Reactive service skeleton
+  - MockReactiveLlmClient
+  - time tool reactive
+    Acceptance:
+  - mvn test passes
+  - chat basic flow works
+
+  ### Milestone W2 — Reactive Persistence
+
+  Deliver:
+
+  - R2DBC repositories replacing JPA
+  - Flyway + schema validated
+  - H2/Postgres profiles
+    Acceptance:
+  - messages persisted correctly
+  - Postgres Testcontainers test pass/skip as expected
+
+  ### Milestone W3 — Reactive Tooling & LLM
+
+  Deliver:
+
+  - OpenAiReactiveLlmClient (no block)
+  - ReactiveToolService with allowlist/permission/timeout/size
+  - http_get reactive with SSRF guard
+    Acceptance:
+  - tool rejection reasons correct
+  - openai/mock switch works
+
+  ### Milestone W4 — Memory & Scheduler
+
+  Deliver:
+
+  - summary compaction reactive
+  - daily summary scheduler
+  - JSON logging + requestId context in reactive chain
+    Acceptance:
+  - compactAfter trigger works
+  - scheduler enabled/disabled behavior correct
+  - all tests pass
+
+  ## 15. Repo Layout (target)
+
+  - api/ (WebFlux controllers, dto, error)
+  - agent/ (reactive orchestration, llm interfaces)
+  - tools/ (reactive tools + registry + executor)
+  - memory/ (entities, r2dbc repositories)
+  - scheduler/ (jobs)
+  - config/, logging/
+  - test/ (WebTestClient, Testcontainers)
+
+  ## 16. Migration Constraints
+
+  1. 每次里程碑必须保持可运行、可回归（mvn test 绿）。
+  2. 不允许引入 .block() 到业务主路径。
+  3. 先保持 API contract 不变，再做内部替换。
+  4. 先 Mock 跑通，再接 OpenAI，再接 scheduler。
+
+  ## 17. Verify Checklist
+
+  - mvn test
+  - curl 基础聊天
+  - /api/v1/tools 包含 time / http_get
+  - allowlist/permission 拒绝路径
+  - requestId in response
+  - JSON logs visible
+  - Postgres profile + Testcontainers (if docker available)

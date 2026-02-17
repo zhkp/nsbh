@@ -49,46 +49,45 @@ public class OpenAiLlmClient implements LlmClient {
     }
 
     @Override
-    public LlmReply firstReply(String userMessage, String model, List<MessageEntity> memoryWindow) {
+    public Mono<LlmReply> firstReply(String userMessage, String model, List<MessageEntity> memoryWindow) {
         ChatCompletionsRequest request = new ChatCompletionsRequest(
                 model,
                 toMessages(memoryWindow),
                 buildToolDefinitions(),
                 "auto"
         );
-        ChatCompletionsResponse response = callOpenAi(request);
-        ChatCompletionsMessage message = firstMessage(response);
-
-        List<ChatCompletionsToolCall> toolCalls = message.toolCalls();
-        if (toolCalls != null && !toolCalls.isEmpty()) {
-            ChatCompletionsToolCall call = toolCalls.get(0);
-            if (call.function() == null || call.function().name() == null || call.function().name().isBlank()) {
-                throw new LlmClientException("OpenAI returned invalid tool call");
+        return callOpenAi(request).map(response -> {
+            ChatCompletionsMessage message = firstMessage(response);
+            List<ChatCompletionsToolCall> toolCalls = message.toolCalls();
+            if (toolCalls != null && !toolCalls.isEmpty()) {
+                ChatCompletionsToolCall call = toolCalls.get(0);
+                if (call.function() == null || call.function().name() == null || call.function().name().isBlank()) {
+                    throw new LlmClientException("OpenAI returned invalid tool call");
+                }
+                String args = call.function() != null && call.function().arguments() != null
+                        ? call.function().arguments()
+                        : "{}";
+                return new LlmReply(null, new ToolCallRequest(call.id(), call.function().name(), args));
             }
-            String args = call.function() != null && call.function().arguments() != null
-                    ? call.function().arguments()
-                    : "{}";
-            return new LlmReply(null, new ToolCallRequest(call.id(), call.function().name(), args));
-        }
-
-        return new LlmReply(message.content() == null ? "" : message.content(), null);
+            return new LlmReply(message.content() == null ? "" : message.content(), null);
+        });
     }
 
     @Override
-    public String finalReply(String userMessage, String model, String toolResult, List<MessageEntity> memoryWindow) {
+    public Mono<String> finalReply(String userMessage, String model, String toolResult, List<MessageEntity> memoryWindow) {
         ChatCompletionsRequest request = new ChatCompletionsRequest(
                 model,
                 toMessages(memoryWindow),
                 null,
                 null
         );
-        ChatCompletionsResponse response = callOpenAi(request);
-        ChatCompletionsMessage message = firstMessage(response);
-        return message.content() == null ? "" : message.content();
+        return callOpenAi(request)
+                .map(this::firstMessage)
+                .map(message -> message.content() == null ? "" : message.content());
     }
 
     @Override
-    public String summarize(List<MessageEntity> messages, String model) {
+    public Mono<String> summarize(List<MessageEntity> messages, String model) {
         List<ChatCompletionsInputMessage> prompt = new ArrayList<>();
         prompt.add(new ChatCompletionsInputMessage(
                 "system",
@@ -98,30 +97,24 @@ public class OpenAiLlmClient implements LlmClient {
         ));
         prompt.addAll(toMessages(messages));
         ChatCompletionsRequest request = new ChatCompletionsRequest(model, prompt, null, null);
-        ChatCompletionsResponse response = callOpenAi(request);
-        ChatCompletionsMessage message = firstMessage(response);
-        return message.content() == null ? "" : message.content();
+        return callOpenAi(request)
+                .map(this::firstMessage)
+                .map(message -> message.content() == null ? "" : message.content());
     }
 
-    private ChatCompletionsResponse callOpenAi(ChatCompletionsRequest request) {
-        try {
-            return webClient.post()
-                    .uri("/v1/chat/completions")
-                    .bodyValue(request)
-                    .retrieve()
-                    .onStatus(HttpStatusCode::isError, clientResponse -> clientResponse.bodyToMono(String.class)
-                            .defaultIfEmpty("")
-                            .flatMap(body -> Mono.error(mapError(clientResponse.statusCode(), body))))
-                    .bodyToMono(ChatCompletionsResponse.class)
-                    .timeout(Duration.ofMillis(timeoutMs))
-                    .block();
-        } catch (WebClientResponseException e) {
-            throw mapError(e.getStatusCode(), e.getResponseBodyAsString());
-        } catch (LlmClientException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new LlmClientException("OpenAI request failed: " + rootCauseMessage(e), e);
-        }
+    private Mono<ChatCompletionsResponse> callOpenAi(ChatCompletionsRequest request) {
+        return webClient.post()
+                .uri("/v1/chat/completions")
+                .bodyValue(request)
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, clientResponse -> clientResponse.bodyToMono(String.class)
+                        .defaultIfEmpty("")
+                        .flatMap(body -> Mono.error(mapError(clientResponse.statusCode(), body))))
+                .bodyToMono(ChatCompletionsResponse.class)
+                .timeout(Duration.ofMillis(timeoutMs))
+                .onErrorMap(WebClientResponseException.class, e -> mapError(e.getStatusCode(), e.getResponseBodyAsString()))
+                .onErrorMap(LlmClientException.class, e -> e)
+                .onErrorMap(e -> new LlmClientException("OpenAI request failed: " + rootCauseMessage(e), e));
     }
 
     private String rootCauseMessage(Throwable throwable) {

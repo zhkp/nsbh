@@ -1,4 +1,8 @@
 spring:
+  r2dbc:
+    url: ${POSTGRES_R2DBC_URL:r2dbc:postgresql://localhost:5432/nsbh}
+    username: ${POSTGRES_USER:nsbh}
+    password: ${POSTGRES_PASSWORD:nsbh}
   datasource:
     url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/nsbh}
     username: ${POSTGRES_USER:nsbh}
@@ -7,6 +11,3 @@ spring:
   h2:
     console:
       enabled: false
-  jpa:
-    hibernate:
-      ddl-auto: validate

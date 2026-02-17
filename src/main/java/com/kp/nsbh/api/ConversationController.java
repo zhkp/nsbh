@@ -11,12 +11,15 @@ import com.kp.nsbh.memory.entity.MessageEntity;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ServerWebExchange;
 
 @RestController
 @RequestMapping("/api/v1/conversations")
@@ -28,27 +31,34 @@ public class ConversationController {
     }
 
     @PostMapping
-    public CreateConversationResponse createConversation() {
-        return new CreateConversationResponse(conversationService.createConversation().getId(), RequestIdSupport.currentRequestId());
+    public Mono<CreateConversationResponse> createConversation(ServerWebExchange exchange) {
+        String requestId = RequestIdSupport.currentRequestId(exchange);
+        return conversationService.createConversation()
+                .map(conversation -> new CreateConversationResponse(conversation.getId(), requestId));
     }
 
     @PostMapping("/{id}/chat")
-    public ChatResponse chat(@PathVariable("id") UUID id, @Valid @RequestBody ChatRequest request) {
-        ChatResult result = conversationService.chat(id, request.message(), request.model());
-        List<ToolCallResultDto> toolCalls = result.toolCalls().stream()
-                .map(call -> new ToolCallResultDto(
-                        call.toolName(),
-                        call.status().name(),
-                        call.reason().name(),
-                        call.result()
-                ))
-                .toList();
-        return new ChatResponse(id, result.assistantMessage(), toolCalls, RequestIdSupport.currentRequestId());
+    public Mono<ChatResponse> chat(@PathVariable("id") UUID id,
+                                   @Valid @RequestBody ChatRequest request,
+                                   ServerWebExchange exchange) {
+        String requestId = RequestIdSupport.currentRequestId(exchange);
+        return conversationService.chat(id, request.message(), request.model())
+                .map(result -> {
+                    List<ToolCallResultDto> toolCalls = result.toolCalls().stream()
+                            .map(call -> new ToolCallResultDto(
+                                    call.toolName(),
+                                    call.status().name(),
+                                    call.reason().name(),
+                                    call.result()
+                            ))
+                            .toList();
+                    return new ChatResponse(id, result.assistantMessage(), toolCalls, requestId);
+                });
     }
 
     @GetMapping("/{id}/messages")
-    public List<MessageDto> messages(@PathVariable("id") UUID id) {
-        return conversationService.getMessages(id).stream().map(this::toDto).toList();
+    public Flux<MessageDto> messages(@PathVariable("id") UUID id) {
+        return conversationService.getMessages(id).map(this::toDto);
     }
 
     private MessageDto toDto(MessageEntity message) {

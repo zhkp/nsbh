@@ -2,23 +2,20 @@ package com.kp.nsbh.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.reactive.server.WebTestClient;
 
 @SpringBootTest
-@AutoConfigureMockMvc
+@AutoConfigureWebTestClient
 @TestPropertySource(properties = {
         "nsbh.llm.provider=mock",
         "nsbh.memory.compactAfter=2",
@@ -27,18 +24,22 @@ import org.springframework.test.web.servlet.MvcResult;
 class SummaryCompactionIntegrationTest {
 
     @Autowired
-    private MockMvc mockMvc;
+    private WebTestClient webTestClient;
 
     @Autowired
     private ObjectMapper objectMapper;
 
     @Test
     void shouldCompactAndPersistSummaryMessage() throws Exception {
-        MvcResult createResult = mockMvc.perform(post("/api/v1/conversations"))
-                .andExpect(status().isOk())
-                .andReturn();
-
-        String conversationId = objectMapper.readTree(createResult.getResponse().getContentAsString())
+        byte[] createBytes = webTestClient.post()
+                .uri("/api/v1/conversations")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .returnResult()
+                .getResponseBodyContent();
+        String createBody = createBytes == null ? "{}" : new String(createBytes, StandardCharsets.UTF_8);
+        String conversationId = objectMapper.readTree(createBody)
                 .get("conversationId")
                 .asText();
 
@@ -46,11 +47,16 @@ class SummaryCompactionIntegrationTest {
         sendChat(conversationId, "hello-2");
         sendChat(conversationId, "hello-3");
 
-        MvcResult messagesResult = mockMvc.perform(get("/api/v1/conversations/{id}/messages", conversationId))
-                .andExpect(status().isOk())
-                .andReturn();
+        byte[] messagesBytes = webTestClient.get()
+                .uri("/api/v1/conversations/{id}/messages", conversationId)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .returnResult()
+                .getResponseBodyContent();
 
-        JsonNode messages = objectMapper.readTree(messagesResult.getResponse().getContentAsString());
+        String messagesBody = messagesBytes == null ? "[]" : new String(messagesBytes, StandardCharsets.UTF_8);
+        JsonNode messages = objectMapper.readTree(messagesBody);
 
         int summaryCount = 0;
         String summaryContent = "";
@@ -66,10 +72,12 @@ class SummaryCompactionIntegrationTest {
         assertTrue(summaryContent.contains("SUMMARY messages=5"));
     }
 
-    private void sendChat(String conversationId, String message) throws Exception {
-        mockMvc.perform(post("/api/v1/conversations/{id}/chat", conversationId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"message\":\"" + message + "\"}"))
-                .andExpect(status().isOk());
+    private void sendChat(String conversationId, String message) {
+        webTestClient.post()
+                .uri("/api/v1/conversations/{id}/chat", conversationId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"message\":\"" + message + "\"}")
+                .exchange()
+                .expectStatus().isOk();
     }
 }

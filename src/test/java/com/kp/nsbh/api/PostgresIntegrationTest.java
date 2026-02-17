@@ -1,28 +1,25 @@
 package com.kp.nsbh.api;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.reactive.server.WebTestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 @SpringBootTest
-@AutoConfigureMockMvc
+@AutoConfigureWebTestClient
 @Testcontainers(disabledWithoutDocker = true)
 @TestPropertySource(properties = {
         "spring.profiles.active=postgres",
@@ -39,6 +36,10 @@ class PostgresIntegrationTest {
 
     @DynamicPropertySource
     static void postgresProps(DynamicPropertyRegistry registry) {
+        registry.add("spring.r2dbc.url", () -> "r2dbc:postgresql://"
+                + postgres.getHost() + ":" + postgres.getFirstMappedPort() + "/" + postgres.getDatabaseName());
+        registry.add("spring.r2dbc.username", postgres::getUsername);
+        registry.add("spring.r2dbc.password", postgres::getPassword);
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
@@ -46,7 +47,7 @@ class PostgresIntegrationTest {
     }
 
     @Autowired
-    private MockMvc mockMvc;
+    private WebTestClient webTestClient;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -62,19 +63,26 @@ class PostgresIntegrationTest {
         );
         assertTrue(count != null && count >= 1);
 
-        MvcResult createResult = mockMvc.perform(post("/api/v1/conversations"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.conversationId").isNotEmpty())
-                .andReturn();
+        byte[] createBytes = webTestClient.post()
+                .uri("/api/v1/conversations")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.conversationId").isNotEmpty()
+                .returnResult()
+                .getResponseBodyContent();
+        String createBody = createBytes == null ? "{}" : new String(createBytes, StandardCharsets.UTF_8);
+        JsonNode createJson = objectMapper.readTree(createBody);
+        String conversationId = createJson.get("conversationId").asText();
 
-        JsonNode createBody = objectMapper.readTree(createResult.getResponse().getContentAsString());
-        String conversationId = createBody.get("conversationId").asText();
-
-        mockMvc.perform(post("/api/v1/conversations/{id}/chat", conversationId)
-                        .contentType("application/json")
-                        .content("{\"message\":\"what time is it\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.assistantMessage").isNotEmpty())
-                .andExpect(jsonPath("$.toolCalls[0].toolName").value("time"));
+        webTestClient.post()
+                .uri("/api/v1/conversations/{id}/chat", conversationId)
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .bodyValue("{\"message\":\"what time is it\"}")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.assistantMessage").isNotEmpty()
+                .jsonPath("$.toolCalls[0].toolName").isEqualTo("time");
     }
 }

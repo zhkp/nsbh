@@ -1,5 +1,7 @@
 package com.kp.nsbh.tools;
 
+import reactor.core.publisher.Mono;
+
 public interface Tool {
-    String execute(String inputJson);
+    Mono<String> execute(String inputJson);
 }

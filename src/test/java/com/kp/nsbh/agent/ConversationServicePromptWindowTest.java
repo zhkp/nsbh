@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 
 class ConversationServicePromptWindowTest {
 
@@ -32,7 +33,7 @@ class ConversationServicePromptWindowTest {
         messages.add(new MessageEntity());
         messages.add(new MessageEntity());
 
-        when(messageRepository.findByConversationIdOrderByCreatedAtAsc(any(UUID.class))).thenReturn(messages);
+        when(messageRepository.findByConversationIdOrderByCreatedAtAsc(any(UUID.class))).thenReturn(Flux.fromIterable(messages));
 
         ConversationService service = new ConversationService(
                 conversationRepository,
@@ -42,7 +43,7 @@ class ConversationServicePromptWindowTest {
                 toolService
         );
 
-        List<MessageEntity> result = service.getPromptWindow(UUID.randomUUID());
+        List<MessageEntity> result = service.getPromptWindow(UUID.randomUUID()).block();
         assertEquals(2, result.size());
         assertEquals(messages.get(1), result.get(0));
         assertEquals(messages.get(2), result.get(1));

@@ -12,6 +12,7 @@ import com.kp.nsbh.tools.ToolRegistry;
 import com.kp.nsbh.tools.ToolService;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
 
 class ToolServiceTest {
 
@@ -21,7 +22,7 @@ class ToolServiceTest {
         properties.getTools().setAllowed(List.of());
 
         ToolService service = new ToolService(new ToolRegistry(List.of(new FastTimeTool())), properties);
-        ToolExecutionResult result = service.execute("conv-1", "time", "{}", "c1");
+        ToolExecutionResult result = service.execute("conv-1", "time", "{}", "c1").block();
 
         assertEquals(ToolCallStatus.REJECTED, result.status());
         assertEquals(ToolCallReason.NOT_ALLOWED, result.reason());
@@ -34,7 +35,7 @@ class ToolServiceTest {
         properties.getPermissions().setGranted(List.of());
 
         ToolService service = new ToolService(new ToolRegistry(List.of(new PermissionedTimeTool())), properties);
-        ToolExecutionResult result = service.execute("conv-1", "time", "{}", "c-missing-perm");
+        ToolExecutionResult result = service.execute("conv-1", "time", "{}", "c-missing-perm").block();
 
         assertEquals(ToolCallStatus.REJECTED, result.status());
         assertEquals(ToolCallReason.PERMISSION_MISSING, result.reason());
@@ -47,7 +48,7 @@ class ToolServiceTest {
         properties.getTools().setTimeoutMs(20);
 
         ToolService service = new ToolService(new ToolRegistry(List.of(new SlowTimeTool())), properties);
-        ToolExecutionResult result = service.execute("conv-1", "time", "{}", "c2");
+        ToolExecutionResult result = service.execute("conv-1", "time", "{}", "c2").block();
 
         assertEquals(ToolCallStatus.FAILED, result.status());
         assertEquals(ToolCallReason.TIMEOUT, result.reason());
@@ -56,29 +57,24 @@ class ToolServiceTest {
     @NsbhTool(name = "time", description = "fast", schema = "{}")
     static class FastTimeTool implements Tool {
         @Override
-        public String execute(String inputJson) {
-            return "2026-01-01T00:00:00Z";
+        public Mono<String> execute(String inputJson) {
+            return Mono.just("2026-01-01T00:00:00Z");
         }
     }
 
     @NsbhTool(name = "time", description = "slow", schema = "{}")
     static class SlowTimeTool implements Tool {
         @Override
-        public String execute(String inputJson) {
-            try {
-                Thread.sleep(200);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-            return "late";
+        public Mono<String> execute(String inputJson) {
+            return Mono.delay(java.time.Duration.ofMillis(200)).thenReturn("late");
         }
     }
 
     @NsbhTool(name = "time", description = "perm", schema = "{}", requiredPermissions = {"NET_HTTP"})
     static class PermissionedTimeTool implements Tool {
         @Override
-        public String execute(String inputJson) {
-            return "ok";
+        public Mono<String> execute(String inputJson) {
+            return Mono.just("ok");
         }
     }
 }

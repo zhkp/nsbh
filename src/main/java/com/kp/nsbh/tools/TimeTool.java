@@ -3,6 +3,7 @@ package com.kp.nsbh.tools;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 
 @Component
 @NsbhTool(
@@ -13,7 +14,7 @@ import org.springframework.stereotype.Component;
 )
 public class TimeTool implements Tool {
     @Override
-    public String execute(String inputJson) {
-        return ZonedDateTime.now().format(DateTimeFormatter.ISO_ZONED_DATE_TIME);
+    public Mono<String> execute(String inputJson) {
+        return Mono.just(ZonedDateTime.now().format(DateTimeFormatter.ISO_ZONED_DATE_TIME));
     }
 }

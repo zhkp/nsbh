@@ -9,27 +9,21 @@
 ## 2. 发送消息聊天链路
 - Controller: `ConversationController.chat`
 - Service: `ConversationService.chat`
-  1. `ConversationRepository.findById` 校验会话存在。
-  2. `MessageRepository.save` 保存 USER 消息。
+  1. `ConversationRepository.findById` 校验会话。
+  2. `MessageRepository.save` 写 USER 消息。
   3. `maybeCompactMemory`：
-     - `MessageRepository.countByConversationIdAndType`
-     - 过阈值时 `MessageRepository.findByConversationIdAndTypeOrderByCreatedAtAsc`
-     - `LlmClient.summarize`
-     - `MessageRepository.save` 写入/更新 `SUMMARY`。
+     - `findByConversationIdOrderByCreatedAtAsc`
+     - NORMAL 消息超过 `compactAfter` 后，调用 `LlmClient.summarize`
+     - 删除旧 `SUMMARY` 并写入新 `SUMMARY`
   4. `buildPromptWindow`：
-     - 加系统提示
-     - `MessageRepository.findByConversationIdAndTypeOrderByCreatedAtDesc` 取最新 SUMMARY
-     - `MessageRepository.findByConversationIdAndTypeOrderByCreatedAtAsc` 取 NORMAL 窗口
+     - 组装 `system prompt + latest summary + last N normal messages`
   5. `LlmClient.firstReply`。
-  6. 若 LLM 请求工具：
-     - Service -> `ToolService.execute`
-       - `ToolRegistry.findMetadata/findTool`
-       - allowlist/permissions/input-size/timeout/output-size
-       - 返回 `ToolExecutionResult`
-     - `MessageRepository.save` 保存 TOOL 消息
-     - 再 `LlmClient.finalReply`
-  7. `MessageRepository.save` 保存 ASSISTANT 消息
-- 返回：`ChatResult` -> Controller 映射为 `ChatResponse`
+  6. 若有工具调用：
+     - `ToolService.execute`（allowlist、permission、输入输出大小、timeout）
+     - `MessageRepository.save` 写 TOOL 消息
+     - `LlmClient.finalReply` 生成最终回复
+  7. `MessageRepository.save` 写 ASSISTANT 消息
+- 返回：`Mono<ChatResult>`，Controller 转为 `Mono<ChatResponse>`
 
 ## 3. 查询消息链路
 - Controller: `ConversationController.messages`
@@ -52,3 +46,4 @@
   - `MessageRepository.findByConversationIdAndCreatedAtAfterOrderByCreatedAtAsc`
   - `MessageRepository.save` 写入 `DAILY_SUMMARY`
 - LLM: `LlmClient.summarize`
+- 返回：`Mono<Void>`，`scheduledRun` 中订阅触发执行

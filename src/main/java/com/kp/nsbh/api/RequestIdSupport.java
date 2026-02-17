@@ -1,18 +1,22 @@
 package com.kp.nsbh.api;
 
-import org.springframework.web.context.request.RequestAttributes;
-import org.springframework.web.context.request.RequestContextHolder;
+import org.slf4j.MDC;
+import org.springframework.web.server.ServerWebExchange;
 
 public final class RequestIdSupport {
     private RequestIdSupport() {
     }
 
     public static String currentRequestId() {
-        RequestAttributes attrs = RequestContextHolder.getRequestAttributes();
-        if (attrs == null) {
-            return "";
+        String value = MDC.get(RequestIdFilter.REQUEST_ID_KEY);
+        return value == null ? "" : value;
+    }
+
+    public static String currentRequestId(ServerWebExchange exchange) {
+        Object fromExchange = exchange.getAttribute(RequestIdFilter.REQUEST_ID_KEY);
+        if (fromExchange instanceof String value && !value.isBlank()) {
+            return value;
         }
-        Object value = attrs.getAttribute(RequestIdFilter.REQUEST_ID_KEY, RequestAttributes.SCOPE_REQUEST);
-        return value == null ? "" : value.toString();
+        return currentRequestId();
     }
 }

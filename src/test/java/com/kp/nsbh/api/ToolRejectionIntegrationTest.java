@@ -1,47 +1,50 @@
 package com.kp.nsbh.api;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.reactive.server.WebTestClient;
 
 @SpringBootTest
-@AutoConfigureMockMvc
+@AutoConfigureWebTestClient
 @TestPropertySource(properties = {
         "nsbh.tools.allowed[0]=dummy"
 })
 class ToolRejectionIntegrationTest {
 
     @Autowired
-    private MockMvc mockMvc;
+    private WebTestClient webTestClient;
 
     @Autowired
     private ObjectMapper objectMapper;
 
     @Test
     void shouldMapNotAllowedReason() throws Exception {
-        MvcResult createResult = mockMvc.perform(post("/api/v1/conversations"))
-                .andExpect(status().isOk())
-                .andReturn();
+        byte[] createBytes = webTestClient.post()
+                .uri("/api/v1/conversations")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .returnResult()
+                .getResponseBodyContent();
+        String createBody = createBytes == null ? "{}" : new String(createBytes, StandardCharsets.UTF_8);
+        JsonNode createJson = objectMapper.readTree(createBody);
+        String conversationId = createJson.get("conversationId").asText();
 
-        JsonNode createBody = objectMapper.readTree(createResult.getResponse().getContentAsString());
-        String conversationId = createBody.get("conversationId").asText();
-
-        mockMvc.perform(post("/api/v1/conversations/{id}/chat", conversationId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"message\":\"what time\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.toolCalls[0].status").value("REJECTED"))
-                .andExpect(jsonPath("$.toolCalls[0].reason").value("NOT_ALLOWED"));
+        webTestClient.post()
+                .uri("/api/v1/conversations/{id}/chat", conversationId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"message\":\"what time\"}")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.toolCalls[0].status").isEqualTo("REJECTED")
+                .jsonPath("$.toolCalls[0].reason").isEqualTo("NOT_ALLOWED");
     }
 }
