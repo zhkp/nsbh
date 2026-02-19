@@ -36,12 +36,12 @@ class DailySummarySchedulerIntegrationTest {
 
     @Test
     void manualInvokeShouldPersistDailySummary() {
-        ConversationEntity conversation = conversationRepository.save(new ConversationEntity());
-        conversationService.chat(conversation.getId(), "hello", null);
+        ConversationEntity conversation = conversationRepository.save(new ConversationEntity()).block();
+        conversationService.chat(conversation.getId(), "hello", null).block();
 
-        scheduler.runDailySummary();
+        scheduler.runDailySummary().block();
 
-        List<MessageEntity> all = messageRepository.findByConversationIdOrderByCreatedAtAsc(conversation.getId());
+        List<MessageEntity> all = messageRepository.findByConversationIdOrderByCreatedAtAsc(conversation.getId()).collectList().block();
         long summaryCount = all.stream().filter(m -> m.getType() == MessageType.DAILY_SUMMARY).count();
         assertEquals(1, summaryCount);
 

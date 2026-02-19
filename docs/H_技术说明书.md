@@ -11,7 +11,7 @@ NSBH（Nanobot Spring Boot Host）是一个轻量代理宿主：
 
 ## 架构设计
 采用单体分层架构：
-- API 层：`api`
+- API 层：`api`（WebFlux）
 - 业务编排层：`agent`
 - 工具层：`tools`
 - 持久化层：`memory.entity/repo`
@@ -25,7 +25,7 @@ NSBH（Nanobot Spring Boot Host）是一个轻量代理宿主：
 - API：对外 REST 契约与错误响应。
 - Agent：聊天主流程、上下文窗口、摘要策略、LLM 适配。
 - Tools：工具注册与执行策略（allowlist/permissions/timeout/size）。
-- Memory：Conversation/Message 实体及查询接口。
+- Memory：R2DBC Conversation/Message 实体与 Reactive Repository。
 - Scheduler：每日摘要写入 `DAILY_SUMMARY`。
 - Config：集中配置绑定（`nsbh.*`）。
 - Logging：全局 JSON 日志与工具审计日志。
@@ -46,7 +46,7 @@ NSBH（Nanobot Spring Boot Host）是一个轻量代理宿主：
 - `ConversationEntity`
   - `id`, `createdAt`, `updatedAt`
 - `MessageEntity`
-  - `id`, `conversation`, `role`, `type`, `content`, `toolName`, `toolCallId`, `createdAt`
+  - `id`, `conversationId`, `role`, `type`, `content`, `toolName`, `toolCallId`, `createdAt`
 - 枚举：
   - `MessageRole`: `SYSTEM|USER|ASSISTANT|TOOL`
   - `MessageType`: `NORMAL|SUMMARY|DAILY_SUMMARY`
@@ -54,7 +54,8 @@ NSBH（Nanobot Spring Boot Host）是一个轻量代理宿主：
 数据库：
 - 默认 H2（内存）
 - 可切换 Postgres profile
-- Flyway 迁移版本：`V1__init_schema.sql`
+- schema 文件：`db/migration/V1__init_schema.sql`
+- 运行时由 R2DBC 初始化器加载；同时保留 Flyway 配置
 
 ## 可扩展性分析
 - LLM 可扩展：实现 `LlmClient` 并通过配置切换。

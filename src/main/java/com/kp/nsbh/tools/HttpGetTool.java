@@ -20,6 +20,8 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 @Component
 @NsbhTool(
@@ -43,7 +45,12 @@ public class HttpGetTool implements Tool {
     }
 
     @Override
-    public String execute(String inputJson) {
+    public Mono<String> execute(String inputJson) {
+        return Mono.fromCallable(() -> executeBlocking(inputJson))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private String executeBlocking(String inputJson) {
         String url = extractUrl(inputJson);
         URI uri = parseUri(url);
         validateUri(uri);

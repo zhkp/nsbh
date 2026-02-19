@@ -14,8 +14,9 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 @Service
 public class ConversationService {
@@ -37,146 +38,181 @@ public class ConversationService {
         this.toolService = toolService;
     }
 
-    @Transactional
-    public ConversationEntity createConversation() {
+    public Mono<ConversationEntity> createConversation() {
         return conversationRepository.save(new ConversationEntity());
     }
 
-    @Transactional
-    public ChatResult chat(UUID conversationId, String userMessage, String model) {
-        ConversationEntity conversation = conversationRepository.findById(conversationId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found"));
-
+    public Mono<ChatResult> chat(UUID conversationId, String userMessage, String model) {
         String modelToUse = model == null || model.isBlank() ? properties.getLlm().getModelDefault() : model;
 
-        messageRepository.save(newMessage(conversation, MessageRole.USER, MessageType.NORMAL, userMessage, null, null));
-        maybeCompactMemory(conversation, modelToUse);
-
-        List<MessageEntity> promptWindow = buildPromptWindow(conversationId);
-
-        LlmReply firstReply;
-        try {
-            firstReply = llmClient.firstReply(userMessage, modelToUse, promptWindow);
-        } catch (LlmClientException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, e.getMessage());
-        }
-        List<ToolExecutionResult> toolCalls = new ArrayList<>();
-        String assistantMessage = firstReply.assistantMessage();
-
-        if (firstReply.toolCall() != null) {
-            ToolCallRequest request = firstReply.toolCall();
-            ToolExecutionResult toolResult = toolService.execute(
-                    conversationId.toString(),
-                    request.toolName(),
-                    request.inputJson(),
-                    request.id()
-            );
-            toolCalls.add(toolResult);
-
-            messageRepository.save(newMessage(
-                    conversation,
-                    MessageRole.TOOL,
-                    MessageType.NORMAL,
-                    toolResult.result(),
-                    toolResult.toolName(),
-                    toolResult.toolCallId()
-            ));
-
-            promptWindow = buildPromptWindow(conversationId);
-            try {
-                assistantMessage = llmClient.finalReply(userMessage, modelToUse, toolResult.result(), promptWindow);
-            } catch (LlmClientException e) {
-                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, e.getMessage());
-            }
-        }
-
-        messageRepository.save(newMessage(conversation, MessageRole.ASSISTANT, MessageType.NORMAL, assistantMessage, null, null));
-        return new ChatResult(assistantMessage, toolCalls);
+        return conversationRepository.findById(conversationId)
+                .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found")))
+                .flatMap(conversation -> messageRepository.save(
+                                newMessage(conversation.getId(), MessageRole.USER, MessageType.NORMAL, userMessage, null, null))
+                        .then(maybeCompactMemory(conversation.getId(), modelToUse))
+                        .then(buildPromptWindow(conversation.getId()))
+                        .flatMap(promptWindow -> firstReply(userMessage, modelToUse, promptWindow))
+                        .flatMap(firstReply -> executeAndReply(conversation.getId(), userMessage, modelToUse, firstReply))
+                );
     }
 
-    @Transactional(readOnly = true)
-    public List<MessageEntity> getMessages(UUID conversationId) {
-        if (!conversationRepository.existsById(conversationId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found");
-        }
-        return messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId);
+    public Flux<MessageEntity> getMessages(UUID conversationId) {
+        return conversationRepository.existsById(conversationId)
+                .flatMapMany(exists -> {
+                    if (!exists) {
+                        return Flux.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found"));
+                    }
+                    return messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId);
+                });
     }
 
-    @Transactional(readOnly = true)
-    public List<MessageEntity> getPromptWindow(UUID conversationId) {
-        List<MessageEntity> all = messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId);
-        int window = properties.getMemory().getWindow();
-        if (all.size() <= window) {
-            return all;
-        }
-        return all.subList(all.size() - window, all.size());
+    public Mono<List<MessageEntity>> getPromptWindow(UUID conversationId) {
+        return messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId)
+                .collectList()
+                .map(all -> {
+                    int window = properties.getMemory().getWindow();
+                    if (all.size() <= window) {
+                        return all;
+                    }
+                    return all.subList(all.size() - window, all.size());
+                });
     }
 
-    private List<MessageEntity> buildPromptWindow(UUID conversationId) {
+    private Mono<ChatResult> executeAndReply(UUID conversationId,
+                                             String userMessage,
+                                             String model,
+                                             LlmReply firstReply) {
+        ToolCallRequest toolCall = firstReply.toolCall();
+        if (toolCall == null) {
+            String assistantMessage = firstReply.assistantMessage() == null ? "" : firstReply.assistantMessage();
+            return messageRepository.save(newMessage(
+                            conversationId,
+                            MessageRole.ASSISTANT,
+                            MessageType.NORMAL,
+                            assistantMessage,
+                            null,
+                            null
+                    ))
+                    .thenReturn(new ChatResult(assistantMessage, List.of()));
+        }
+
+        return executeTool(conversationId, toolCall)
+                .flatMap(toolResult -> messageRepository.save(newMessage(
+                                conversationId,
+                                MessageRole.TOOL,
+                                MessageType.NORMAL,
+                                toolResult.result(),
+                                toolResult.toolName(),
+                                toolResult.toolCallId()
+                        ))
+                        .then(buildPromptWindow(conversationId))
+                        .flatMap(promptWindow -> finalReply(
+                                userMessage,
+                                model,
+                                toolResult.result(),
+                                promptWindow
+                        ))
+                        .flatMap(assistantMessage -> messageRepository.save(newMessage(
+                                                conversationId,
+                                                MessageRole.ASSISTANT,
+                                                MessageType.NORMAL,
+                                                assistantMessage,
+                                                null,
+                                                null
+                                        ))
+                                        .thenReturn(new ChatResult(assistantMessage, List.of(toolResult)))
+                        )
+                );
+    }
+
+    private Mono<ToolExecutionResult> executeTool(UUID conversationId, ToolCallRequest request) {
+        return toolService.execute(
+                conversationId.toString(),
+                request.toolName(),
+                request.inputJson(),
+                request.id()
+        );
+    }
+
+    private Mono<LlmReply> firstReply(String userMessage, String model, List<MessageEntity> promptWindow) {
+        return llmClient.firstReply(userMessage, model, promptWindow)
+                .onErrorMap(LlmClientException.class, e -> new ResponseStatusException(HttpStatus.BAD_GATEWAY, e.getMessage()));
+    }
+
+    private Mono<String> finalReply(String userMessage, String model, String toolResult, List<MessageEntity> promptWindow) {
+        return llmClient.finalReply(userMessage, model, toolResult, promptWindow)
+                .onErrorMap(LlmClientException.class, e -> new ResponseStatusException(HttpStatus.BAD_GATEWAY, e.getMessage()));
+    }
+
+    private Mono<String> summarize(List<MessageEntity> messages, String model) {
+        return llmClient.summarize(messages, model)
+                .onErrorResume(LlmClientException.class, e -> Mono.empty());
+    }
+
+    private Mono<Void> maybeCompactMemory(UUID conversationId, String model) {
+        return messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId)
+                .collectList()
+                .flatMap(allMessages -> {
+                    List<MessageEntity> normals = allMessages.stream()
+                            .filter(message -> message.getType() == MessageType.NORMAL)
+                            .toList();
+                    if (normals.size() <= properties.getMemory().getCompactAfter()) {
+                        return Mono.empty();
+                    }
+                    List<MessageEntity> summaries = allMessages.stream()
+                            .filter(message -> message.getType() == MessageType.SUMMARY)
+                            .toList();
+
+                    return summarize(normals, model)
+                            .flatMap(summaryText -> {
+                                return Flux.fromIterable(summaries)
+                                        .flatMap(summary -> messageRepository.deleteById(summary.getId()))
+                                        .then()
+                                        .then(messageRepository.save(newMessage(
+                                                conversationId,
+                                                MessageRole.SYSTEM,
+                                                MessageType.SUMMARY,
+                                                summaryText,
+                                                null,
+                                                null
+                                        )))
+                                        .then();
+                            });
+                })
+                .then();
+    }
+
+    private Mono<List<MessageEntity>> buildPromptWindow(UUID conversationId) {
+        return messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId)
+                .collectList()
+                .map(allMessages -> {
+                    MessageEntity summary = null;
+                    List<MessageEntity> normals = new ArrayList<>();
+                    for (MessageEntity message : allMessages) {
+                        if (message.getType() == MessageType.SUMMARY) {
+                            summary = message;
+                        } else if (message.getType() == MessageType.NORMAL) {
+                            normals.add(message);
+                        }
+                    }
+
+                    int window = properties.getMemory().getWindow();
+                    if (normals.size() <= window) {
+                        return assemblePrompt(summary, normals);
+                    }
+                    List<MessageEntity> limited = normals.subList(normals.size() - window, normals.size());
+                    return assemblePrompt(summary, limited);
+                });
+    }
+
+    private List<MessageEntity> assemblePrompt(MessageEntity summary, List<MessageEntity> normals) {
         List<MessageEntity> prompt = new ArrayList<>();
         prompt.add(systemPromptMessage());
-
-        MessageEntity summary = latestSummary(conversationId);
         if (summary != null) {
             prompt.add(summary);
         }
-
-        List<MessageEntity> normals = messageRepository.findByConversationIdAndTypeOrderByCreatedAtAsc(
-                conversationId,
-                MessageType.NORMAL
-        );
-        int window = properties.getMemory().getWindow();
-        if (normals.size() > window) {
-            normals = normals.subList(normals.size() - window, normals.size());
-        }
         prompt.addAll(normals);
         return prompt;
-    }
-
-    private void maybeCompactMemory(ConversationEntity conversation, String model) {
-        UUID conversationId = conversation.getId();
-        long normalCount = messageRepository.countByConversationIdAndType(conversationId, MessageType.NORMAL);
-        if (normalCount <= properties.getMemory().getCompactAfter()) {
-            return;
-        }
-
-        List<MessageEntity> normals = messageRepository.findByConversationIdAndTypeOrderByCreatedAtAsc(
-                conversationId,
-                MessageType.NORMAL
-        );
-        String summaryText;
-        try {
-            summaryText = llmClient.summarize(normals, model);
-        } catch (LlmClientException e) {
-            return;
-        }
-
-        MessageEntity summary = latestSummary(conversationId);
-        if (summary == null) {
-            messageRepository.save(newMessage(
-                    conversation,
-                    MessageRole.SYSTEM,
-                    MessageType.SUMMARY,
-                    summaryText,
-                    null,
-                    null
-            ));
-            return;
-        }
-
-        summary.setContent(summaryText);
-        messageRepository.save(summary);
-    }
-
-    private MessageEntity latestSummary(UUID conversationId) {
-        List<MessageEntity> summaries = messageRepository.findByConversationIdAndTypeOrderByCreatedAtDesc(
-                conversationId,
-                MessageType.SUMMARY
-        );
-        if (summaries.isEmpty()) {
-            return null;
-        }
-        return summaries.get(0);
     }
 
     private MessageEntity systemPromptMessage() {
@@ -187,14 +223,14 @@ public class ConversationService {
         return message;
     }
 
-    private MessageEntity newMessage(ConversationEntity conversation,
+    private MessageEntity newMessage(UUID conversationId,
                                      MessageRole role,
                                      MessageType type,
                                      String content,
                                      String toolName,
                                      String toolCallId) {
         MessageEntity message = new MessageEntity();
-        message.setConversation(conversation);
+        message.setConversationId(conversationId);
         message.setRole(role);
         message.setType(type);
         message.setContent(content == null ? "" : content);

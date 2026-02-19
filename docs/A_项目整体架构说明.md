@@ -1,54 +1,55 @@
 # A. 项目整体架构说明
 
 ## 1. 项目整体架构说明
-本项目是一个基于 Spring Boot 的单体应用，采用典型分层架构：
-- 接入层：REST API（`api` 包）
-- 业务层：会话编排、LLM 调用、工具执行（`agent`、`tools`、`scheduler`）
-- 数据层：JPA 实体与仓储（`memory.entity`、`memory.repo`）
-- 基础设施层：配置、日志、请求追踪（`config`、`logging`、`api.RequestId*`）
+本项目是单体 Spring Boot 应用，采用端到端 Reactive 架构：
+- 接入层：WebFlux Controller（`api`）
+- 业务编排层：对话流程、LLM、记忆压缩（`agent`）
+- 工具层：工具注册、策略校验、执行审计（`tools`）
+- 数据层：R2DBC 实体与仓储（`memory.entity`、`memory.repo`）
+- 调度层：每日摘要任务（`scheduler`）
+- 基础设施层：配置、日志、requestId（`config`、`logging`、`api.RequestId*`）
 
-运行时核心路径：
-`Controller -> ConversationService -> (LlmClient + ToolService) -> Repository -> DB`
+核心运行链路：
+`Controller (Mono/Flux) -> ConversationService -> (LlmClient + ToolService) -> Reactive Repository -> DB`
 
 ## 2. 模块职责划分
-- `com.kp.nsbh.api`：提供 HTTP 接口、DTO 映射、异常统一返回、requestId 注入。
-- `com.kp.nsbh.agent`：实现对话主流程、Prompt 构建、LLM 提供方适配（mock/openai）。
-- `com.kp.nsbh.tools`：工具定义、注册发现、权限与超时/大小控制、审计日志。
-- `com.kp.nsbh.memory.entity`：`Conversation/Message` 数据模型。
-- `com.kp.nsbh.memory.repo`：会话与消息查询、统计与分页窗口查询。
-- `com.kp.nsbh.scheduler`：每日摘要任务（开关+cron）。
-- `com.kp.nsbh.config`：统一配置绑定（`nsbh.*`）。
-- `com.kp.nsbh.logging`：JSON 日志辅助。
+- `com.kp.nsbh.api`：HTTP API、DTO、统一错误模型、requestId 注入与透传。
+- `com.kp.nsbh.agent`：聊天主流程编排、Prompt 窗口、summary compaction、LLM 适配。
+- `com.kp.nsbh.tools`：`@NsbhTool` 注册、allowlist/permission/timeout/size 控制、TOOL_AUDIT。
+- `com.kp.nsbh.memory.entity`：会话与消息数据模型（R2DBC 映射）。
+- `com.kp.nsbh.memory.repo`：ReactiveCrudRepository + 查询方法。
+- `com.kp.nsbh.scheduler`：daily summary 定时任务（可开关）。
+- `com.kp.nsbh.config`：`nsbh.*` 配置绑定与 schema 初始化。
+- `com.kp.nsbh.logging`：结构化日志字段拼装。
 
 ## 3. 各模块之间的依赖关系
-- `api` 依赖 `agent`（调用业务服务），依赖 `api.RequestIdSupport`（返回 requestId）。
-- `agent` 依赖 `memory.repo`、`tools`、`config`。
-- `agent.OpenAiLlmClient` 依赖 `tools.ToolRegistry`（动态工具定义）。
-- `tools` 依赖 `config`、`logging`。
-- `scheduler` 依赖 `agent.LlmClient` + `memory.repo` + `config`。
-- `memory.repo` 依赖 `memory.entity`。
+- `api -> agent`
+- `agent -> memory.repo + tools + config`
+- `OpenAiLlmClient -> ToolRegistry`（动态输出工具定义）
+- `tools -> config + logging`
+- `scheduler -> memory.repo + agent.LlmClient + config`
+- `memory.repo -> memory.entity`
 
 ## 4. 技术栈总结
-- 语言/框架：Java 21, Spring Boot 3.3.4
-- Web：Spring MVC (`spring-boot-starter-web`)
-- 校验：Bean Validation
-- 数据访问：Spring Data JPA
-- 数据库：H2（默认）+ PostgreSQL（profile）
-- 迁移：Flyway
-- LLM 调用：Spring WebClient（OpenAI Chat Completions）
-- 定时任务：Spring Scheduling
-- 文档：springdoc-openapi
-- 日志：Logback + logstash-logback-encoder（JSON）
-- 测试：JUnit5 + Spring Boot Test + Testcontainers
+- Java 21
+- Spring Boot 3.3.4
+- Spring WebFlux（`spring-boot-starter-webflux`）
+- Spring Data R2DBC（H2/PostgreSQL）
+- JDBC + Flyway（迁移 sidecar）
+- WebClient（OpenAI 调用）
+- Spring Scheduling
+- springdoc-openapi-webflux-ui
+- Logback + logstash-logback-encoder（JSON 日志）
+- JUnit5 + Spring Boot Test + Testcontainers
 
 ## 5. 典型请求执行流程
 以 `POST /api/v1/conversations/{id}/chat` 为例：
-1. `ConversationController.chat` 接收请求并交给 `ConversationService.chat`。
-2. `ConversationService` 保存 USER 消息，必要时触发摘要压缩。
-3. 构建 Prompt（system + latest summary + last N normal messages）。
-4. 调用 `LlmClient.firstReply`，若返回 toolCall：
-   - 进入 `ToolService.execute`，做注册检查、allowlist、权限、输入大小、超时、输出大小控制。
-   - 执行工具并记录 `TOOL_AUDIT`。
-   - 保存 TOOL 消息。
-   - 再调用 `LlmClient.finalReply`。
-5. 保存 ASSISTANT 消息，返回 `assistantMessage + toolCalls + requestId`。
+1. `ConversationController.chat` 收到请求，读取 `requestId`。
+2. `ConversationService.chat` 校验会话并写入 USER 消息。
+3. 执行 `maybeCompactMemory`：超过阈值时调用 `LlmClient.summarize`，写入 `SUMMARY`。
+4. 构建 Prompt：`system prompt + latest summary + last N normal messages`。
+5. 调 `LlmClient.firstReply`：
+   - 无工具调用：直接写 ASSISTANT 消息并返回。
+   - 有工具调用：进入 `ToolService.execute`，完成策略校验与执行。
+6. 工具结果写入 TOOL 消息，调用 `LlmClient.finalReply` 生成最终回答。
+7. 写入 ASSISTANT 消息，返回 `assistantMessage + toolCalls + requestId`。
