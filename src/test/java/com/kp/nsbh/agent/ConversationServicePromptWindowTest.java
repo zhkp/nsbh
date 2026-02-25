@@ -54,6 +54,31 @@ class ConversationServicePromptWindowTest {
     }
 
     @Test
+    void shouldReturnEmptyPromptWindowWhenConfiguredWindowIsNegative() {
+        ConversationRepository conversationRepository = mock(ConversationRepository.class);
+        MessageRepository messageRepository = mock(MessageRepository.class);
+        LlmClient llmClient = mock(LlmClient.class);
+        ToolService toolService = mock(ToolService.class);
+
+        NsbhProperties properties = new NsbhProperties();
+        properties.getMemory().setWindow(-1);
+
+        List<MessageEntity> messages = List.of(new MessageEntity(), new MessageEntity());
+        when(messageRepository.findByConversationIdOrderByCreatedAtAsc(any(UUID.class))).thenReturn(Flux.fromIterable(messages));
+
+        ConversationService service = new ConversationService(
+                conversationRepository,
+                messageRepository,
+                properties,
+                llmClient,
+                toolService
+        );
+
+        List<MessageEntity> result = service.getPromptWindow(UUID.randomUUID()).block();
+        assertEquals(0, result.size());
+    }
+
+    @Test
     void chatShouldThrowNotFoundWhenConversationMissing() {
         ConversationRepository conversationRepository = mock(ConversationRepository.class);
         MessageRepository messageRepository = mock(MessageRepository.class);

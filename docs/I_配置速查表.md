@@ -25,7 +25,7 @@
 # mock
 mvn spring-boot:run -Dspring-boot.run.arguments="--nsbh.llm.provider=mock"
 
-# openai（直接参数传 key）
+# openai（直接参数传 API Key）
 mvn spring-boot:run -Dspring-boot.run.arguments="--nsbh.llm.provider=openai --nsbh.llm.apiKey=<YOUR_OPENAI_API_KEY> --nsbh.llm.timeoutMs=30000"
 ```
 
@@ -33,7 +33,7 @@ mvn spring-boot:run -Dspring-boot.run.arguments="--nsbh.llm.provider=openai --ns
 
 | 配置项 | 默认值 | 说明 |
 |---|---|---|
-| `nsbh.memory.window` | `20` | Prompt 窗口的 NORMAL 消息条数 |
+| `nsbh.memory.window` | `20` | Prompt 窗口的 NORMAL 消息条数（小于 0 时按 0 处理） |
 | `nsbh.memory.compactAfter` | `40` | 超过阈值触发 summary compaction |
 | `nsbh.memory.systemPrompt` | 固定字符串 | 系统提示词 |
 
