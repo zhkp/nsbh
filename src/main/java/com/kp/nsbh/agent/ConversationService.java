@@ -70,7 +70,7 @@ public class ConversationService {
         return messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId)
                 .collectList()
                 .map(all -> {
-                    int window = properties.getMemory().getWindow();
+                    int window = normalizedWindowSize();
                     if (all.size() <= window) {
                         return all;
                     }
@@ -196,13 +196,17 @@ public class ConversationService {
                         }
                     }
 
-                    int window = properties.getMemory().getWindow();
+                    int window = normalizedWindowSize();
                     if (normals.size() <= window) {
                         return assemblePrompt(summary, normals);
                     }
                     List<MessageEntity> limited = normals.subList(normals.size() - window, normals.size());
                     return assemblePrompt(summary, limited);
                 });
+    }
+
+    private int normalizedWindowSize() {
+        return Math.max(0, properties.getMemory().getWindow());
     }
 
     private List<MessageEntity> assemblePrompt(MessageEntity summary, List<MessageEntity> normals) {
