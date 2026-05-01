@@ -252,6 +252,24 @@ nsbh:
     timeout-ms: 15000
 ```
 
+**开发与验收阶段推荐使用 OpenRouter 免费模型**，无需各平台单独申请 API key：
+
+```yaml
+nsbh:
+  llm:
+    provider: openai                          # OpenRouter 兼容 OpenAI 格式，直接复用
+    model-default: meta-llama/llama-3.3-70b-instruct:free   # OpenRouter 免费模型
+    base-url: https://openrouter.ai/api
+    api-key: ${OPENROUTER_API_KEY:}
+    timeout-ms: 30000                         # 免费模型延迟较高，适当放宽超时
+```
+
+常用 OpenRouter 免费模型（随时在 [openrouter.ai/models?q=free](https://openrouter.ai/models?q=free) 查最新列表）：
+- `meta-llama/llama-3.3-70b-instruct:free`（支持工具调用）
+- `google/gemini-2.0-flash-exp:free`（支持工具调用 + 视觉）
+- `deepseek/deepseek-r1:free`（推理增强）
+- `mistralai/mistral-7b-instruct:free`
+
 DeepSeek、Moonshot、Kimi 等兼容 OpenAI 格式，只需修改 `base-url` 和 `api-key`，复用 `OpenAiLlmClient`（`provider: openai`）。
 
 **新增 `AnthropicLlmClient`**：
@@ -287,7 +305,7 @@ Ollama 提供 OpenAI-compatible endpoint（`/api/chat`），大部分逻辑可�
 - [ ] Mock LLM 模拟 3 轮工具调用，`ChatOrchestrator` 正确循环执行并记录所有消息
 - [ ] `POST /conversations/{id}/chat/stream` 返回 SSE 流，每个 chunk 独立到达
 - [ ] 配置 `provider: anthropic` 能正常发起请求（Integration 测试用 mock WebServer）
-- [ ] 配置 `provider: openai` + `base-url: https://api.deepseek.com` + DeepSeek key 能聊天
+- [ ] 配置 OpenRouter（`base-url: https://openrouter.ai/api`，免费模型 `meta-llama/llama-3.3-70b-instruct:free`）能正常完成一轮含工具调用的对话
 - [ ] `ConversationService` 行数 < 100 行（已拆分至各子服务）
 
 ---
@@ -507,7 +525,7 @@ nsbh:
 - [ ] `shell` 工具未配置 `SHELL_EXEC` 权限时被拒绝，配置后能执行 allowlist 内命令
 - [ ] 配置一个 stdio MCP server（如 `@modelcontextprotocol/server-filesystem`），其工具出现在 `/api/v1/tools` 列表
 - [ ] MCP server 断开时，对应工具从 `ToolRegistry` 移除（或返回明确错误）
-- [ ] 并行工具调用：LLM 请求同时调用 `time` + `web_search`，两个工具并发执行
+- [ ] 并行工具调用：使用 OpenRouter 免费模型（`google/gemini-2.0-flash-exp:free`）触发同时调用 `time` + `web_search`，两个工具并发执行，审计日志中两条记录时间戳相近
 
 ---
 
@@ -750,10 +768,10 @@ nsbh:
 - [ ] `mvn test` 全绿
 - [ ] `curl -X POST http://localhost:8080/v1/chat/completions -d '{"model":"mock","messages":[{"role":"user","content":"hi"}],"stream":false}'` 返回 OpenAI 兼容格式
 - [ ] 同上，`"stream":true` 返回正确 SSE 流
-- [ ] Cherry Studio / Open WebUI 配置 NSBH 地址能正常对话
-- [ ] Telegram bot 能正常聊天，工具调用结果正确返回
-- [ ] Discord bot 在 @mention 时响应，长回复自动分割
-- [ ] Slack bot 在 app_mention 时响应
+- [ ] Cherry Studio / Open WebUI 配置 NSBH 地址，后端使用 OpenRouter 免费模型，能正常对话
+- [ ] Telegram bot 能正常聊天，后端使用 OpenRouter 免费模型，工具调用结果正确返回
+- [ ] Discord bot 在 @mention 时响应，后端使用 OpenRouter 免费模型，长回复自动分割
+- [ ] Slack bot 在 app_mention 时响应，后端使用 OpenRouter 免费模型
 
 ---
 
@@ -994,10 +1012,10 @@ public class ScheduleTool implements Tool {
 
 - [ ] `mvn test` 全绿
 - [ ] 发送 3000 token 的消息，prompt window 不超过 `max-prompt-tokens` 配置
-- [ ] 两次不同会话，第二次能检索到第一次的历史记忆并注入 prompt
+- [ ] 两次不同会话（使用 OpenRouter 免费模型），第二次能检索到第一次的历史记忆并注入 prompt，LLM 回复中体现出对历史的感知
 - [ ] 加载自定义 YAML 技能，触发关键词时 system prompt 正确追加
 - [ ] `/skill coding` 命令切换技能
-- [ ] 对话内输入"每天早上 9 点提醒我喝水"，定时任务被创建，`/jobs` 命令能看到
+- [ ] 对话内输入"每天早上 9 点提醒我喝水"（使用 OpenRouter 免费模型解析），定时任务被创建，`/jobs` 命令能看到正确的 cron 表达式
 
 ---
 
