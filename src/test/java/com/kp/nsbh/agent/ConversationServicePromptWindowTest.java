@@ -134,7 +134,7 @@ class ConversationServicePromptWindowTest {
         when(conversationRepository.findById(any(UUID.class))).thenReturn(Mono.just(conversation));
         when(messageRepository.save(any(MessageEntity.class))).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
         when(messageRepository.findByConversationIdOrderByCreatedAtAsc(any(UUID.class))).thenReturn(Flux.empty());
-        when(llmClient.firstReply(any(), any(), any())).thenReturn(Mono.just(new LlmReply("assistant", null)));
+        when(llmClient.firstReply(any(), any(), any())).thenReturn(Mono.just(LlmReply.text("assistant")));
 
         ConversationService service = new ConversationService(
                 conversationRepository,

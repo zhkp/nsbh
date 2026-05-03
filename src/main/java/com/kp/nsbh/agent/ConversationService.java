@@ -82,8 +82,7 @@ public class ConversationService {
                                              String userMessage,
                                              String model,
                                              LlmReply firstReply) {
-        ToolCallRequest toolCall = firstReply.toolCall();
-        if (toolCall == null) {
+        if (!firstReply.hasToolCalls()) {
             String assistantMessage = firstReply.assistantMessage() == null ? "" : firstReply.assistantMessage();
             return messageRepository.save(newMessage(
                             conversationId,
@@ -96,6 +95,7 @@ public class ConversationService {
                     .thenReturn(new ChatResult(assistantMessage, List.of()));
         }
 
+        ToolCallRequest toolCall = firstReply.toolCalls().get(0);
         return executeTool(conversationId, toolCall)
                 .flatMap(toolResult -> messageRepository.save(newMessage(
                                 conversationId,

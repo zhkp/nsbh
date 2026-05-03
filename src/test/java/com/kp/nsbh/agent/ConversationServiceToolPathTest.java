@@ -46,7 +46,7 @@ class ConversationServiceToolPathTest {
         when(messageRepository.findByConversationIdOrderByCreatedAtAsc(conversation.getId()))
                 .thenReturn(Flux.just(normal(MessageRole.USER, "u"), normal(MessageRole.ASSISTANT, "a")));
         when(llmClient.firstReply(anyString(), anyString(), any()))
-                .thenReturn(Mono.just(new LlmReply(null, new ToolCallRequest("call-1", "time", "{}"))));
+                .thenReturn(Mono.just(LlmReply.withTool(new ToolCallRequest("call-1", "time", "{}"))));
         when(toolService.execute(anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(Mono.just(new ToolExecutionResult("time", ToolCallStatus.SUCCESS, ToolCallReason.NONE, "2026-02-17T00:00:00Z", "call-1")));
         when(llmClient.finalReply(anyString(), anyString(), anyString(), any())).thenReturn(Mono.just("final-answer"));
@@ -106,7 +106,7 @@ class ConversationServiceToolPathTest {
         when(messageRepository.save(any(MessageEntity.class))).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
         when(messageRepository.findByConversationIdOrderByCreatedAtAsc(conversation.getId())).thenReturn(Flux.empty());
         when(llmClient.firstReply(anyString(), anyString(), any()))
-                .thenReturn(Mono.just(new LlmReply(null, new ToolCallRequest("call-1", "time", "{}"))));
+                .thenReturn(Mono.just(LlmReply.withTool(new ToolCallRequest("call-1", "time", "{}"))));
         when(toolService.execute(anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(Mono.just(new ToolExecutionResult("time", ToolCallStatus.SUCCESS, ToolCallReason.NONE, "ok", "call-1")));
         when(llmClient.finalReply(anyString(), anyString(), anyString(), any()))
@@ -143,7 +143,7 @@ class ConversationServiceToolPathTest {
         when(messageRepository.findByConversationIdOrderByCreatedAtAsc(conversation.getId())).thenReturn(Flux.empty());
         when(llmClient.firstReply(anyString(), anyString(), any())).thenAnswer(inv -> {
             modelSeen.set(inv.getArgument(1));
-            return Mono.just(new LlmReply("assistant", null));
+            return Mono.just(LlmReply.text("assistant"));
         });
 
         ConversationService service = new ConversationService(

@@ -60,16 +60,22 @@ public class OpenAiLlmClient implements LlmClient {
             ChatCompletionsMessage message = firstMessage(response);
             List<ChatCompletionsToolCall> toolCalls = message.toolCalls();
             if (toolCalls != null && !toolCalls.isEmpty()) {
-                ChatCompletionsToolCall call = toolCalls.get(0);
-                if (call.function() == null || call.function().name() == null || call.function().name().isBlank()) {
+                List<ToolCallRequest> requests = toolCalls.stream()
+                        .filter(call -> call.function() != null
+                                && call.function().name() != null
+                                && !call.function().name().isBlank())
+                        .map(call -> {
+                            String args = call.function().arguments() != null
+                                    ? call.function().arguments() : "{}";
+                            return new ToolCallRequest(call.id(), call.function().name(), args);
+                        })
+                        .toList();
+                if (requests.isEmpty()) {
                     throw new LlmClientException("OpenAI returned invalid tool call");
                 }
-                String args = call.function() != null && call.function().arguments() != null
-                        ? call.function().arguments()
-                        : "{}";
-                return new LlmReply(null, new ToolCallRequest(call.id(), call.function().name(), args));
+                return LlmReply.withTools(requests);
             }
-            return new LlmReply(message.content() == null ? "" : message.content(), null);
+            return LlmReply.text(message.content() == null ? "" : message.content());
         });
     }
 

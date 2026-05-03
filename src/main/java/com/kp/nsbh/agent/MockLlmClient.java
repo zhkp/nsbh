@@ -22,12 +22,12 @@ public class MockLlmClient implements LlmClient {
         if (matcher.find()) {
             String url = matcher.group(1).replaceAll("[),.]+$", "");
             String args = "{\"url\":\"" + url.replace("\"", "\\\"") + "\"}";
-            return Mono.just(new LlmReply(null, new ToolCallRequest(UUID.randomUUID().toString(), "http_get", args)));
+            return Mono.just(LlmReply.withTool(new ToolCallRequest(UUID.randomUUID().toString(), "http_get", args)));
         }
         if (lower.contains("time") || lower.contains("时间")) {
-            return Mono.just(new LlmReply(null, new ToolCallRequest(UUID.randomUUID().toString(), "time", "{}")));
+            return Mono.just(LlmReply.withTool(new ToolCallRequest(UUID.randomUUID().toString(), "time", "{}")));
         }
-        return Mono.just(new LlmReply("Mock: " + userMessage, null));
+        return Mono.just(LlmReply.text("Mock: " + userMessage));
     }
 
     @Override

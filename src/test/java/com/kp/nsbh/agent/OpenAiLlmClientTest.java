@@ -39,10 +39,10 @@ class OpenAiLlmClientTest {
 
         assertNotNull(reply);
         assertNull(reply.assistantMessage());
-        assertNotNull(reply.toolCall());
-        assertEquals("call-1", reply.toolCall().id());
-        assertEquals("time", reply.toolCall().toolName());
-        assertEquals("{}", reply.toolCall().inputJson());
+        assertTrue(reply.hasToolCalls());
+        assertEquals("call-1", reply.toolCalls().get(0).id());
+        assertEquals("time", reply.toolCalls().get(0).toolName());
+        assertEquals("{}", reply.toolCalls().get(0).inputJson());
     }
 
     @Test
@@ -56,7 +56,7 @@ class OpenAiLlmClientTest {
 
         assertNotNull(reply);
         assertEquals("hi", reply.assistantMessage());
-        assertNull(reply.toolCall());
+        assertTrue(reply.toolCalls().isEmpty());
     }
 
     @Test
