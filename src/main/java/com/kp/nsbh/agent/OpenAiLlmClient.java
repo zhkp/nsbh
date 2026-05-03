@@ -52,11 +52,7 @@ public class OpenAiLlmClient implements LlmClient {
     @Override
     public Mono<LlmReply> firstReply(String userMessage, String model, List<MessageEntity> memoryWindow) {
         ChatCompletionsRequest request = new ChatCompletionsRequest(
-                model,
-                toMessages(memoryWindow),
-                buildToolDefinitions(),
-                "auto"
-        );
+                model, toMessages(memoryWindow), buildToolDefinitions(), "auto", null);
         return callOpenAi(request).map(response -> {
             ChatCompletionsMessage message = firstMessage(response);
             List<ChatCompletionsToolCall> toolCalls = message.toolCalls();
@@ -83,11 +79,7 @@ public class OpenAiLlmClient implements LlmClient {
     @Override
     public Mono<String> finalReply(String userMessage, String model, String toolResult, List<MessageEntity> memoryWindow) {
         ChatCompletionsRequest request = new ChatCompletionsRequest(
-                model,
-                toMessages(memoryWindow),
-                null,
-                null
-        );
+                model, toMessages(memoryWindow), null, null, null);
         return callOpenAi(request)
                 .map(this::firstMessage)
                 .map(message -> message.content() == null ? "" : message.content());
@@ -96,7 +88,34 @@ public class OpenAiLlmClient implements LlmClient {
     @Override
     public Flux<String> streamFirstReply(String userMessage, String model,
                                           List<MessageEntity> memoryWindow) {
-        throw new UnsupportedOperationException("streamFirstReply not yet implemented for OpenAiLlmClient");
+        ChatCompletionsRequest request = new ChatCompletionsRequest(
+                model, toMessages(memoryWindow), buildToolDefinitions(), "auto", true);
+        return webClient.post()
+                .uri("/v1/chat/completions")
+                .bodyValue(request)
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, resp -> resp.bodyToMono(String.class)
+                        .defaultIfEmpty("")
+                        .flatMap(body -> Mono.error(mapError(resp.statusCode(), body))))
+                .bodyToFlux(String.class)
+                .timeout(Duration.ofMillis(timeoutMs))
+                .filter(line -> line.startsWith("data: ") && !line.contains("[DONE]"))
+                .mapNotNull(line -> {
+                    try {
+                        String json = line.substring(6).trim();
+                        Map<String, Object> parsed = objectMapper.readValue(json, MAP_TYPE);
+                        Object choices = parsed.get("choices");
+                        if (!(choices instanceof java.util.List<?> list) || list.isEmpty()) return null;
+                        Object delta = ((Map<?, ?>) list.get(0)).get("delta");
+                        if (!(delta instanceof Map<?, ?> deltaMap)) return null;
+                        Object content = deltaMap.get("content");
+                        return content instanceof String s ? s : null;
+                    } catch (Exception e) {
+                        return null;
+                    }
+                })
+                .onErrorMap(LlmClientException.class, e -> e)
+                .onErrorMap(e -> new LlmClientException("OpenAI stream failed: " + rootCauseMessage(e)));
     }
 
     @Override
@@ -109,7 +128,7 @@ public class OpenAiLlmClient implements LlmClient {
                 null
         ));
         prompt.addAll(toMessages(messages));
-        ChatCompletionsRequest request = new ChatCompletionsRequest(model, prompt, null, null);
+        ChatCompletionsRequest request = new ChatCompletionsRequest(model, prompt, null, null, null);
         return callOpenAi(request)
                 .map(this::firstMessage)
                 .map(message -> message.content() == null ? "" : message.content());
@@ -245,7 +264,8 @@ public class OpenAiLlmClient implements LlmClient {
             String model,
             List<ChatCompletionsInputMessage> messages,
             @JsonProperty("tools") List<ChatCompletionsToolDefinition> tools,
-            @JsonProperty("tool_choice") String toolChoice
+            @JsonProperty("tool_choice") String toolChoice,
+            @JsonProperty("stream") Boolean stream
     ) {
     }
 
