@@ -12,6 +12,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
@@ -26,11 +27,28 @@ import reactor.core.publisher.Mono;
 public class OpenAiLlmClient implements LlmClient {
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
-    private final WebClient webClient;
-    private final long timeoutMs;
-    private final ObjectMapper objectMapper;
-    private final ToolRegistry toolRegistry;
+    private WebClient webClient;
+    private long timeoutMs;
+    private ObjectMapper objectMapper;
+    private ToolRegistry toolRegistry;
 
+    // Package-private constructor used by OllamaLlmClient
+    OpenAiLlmClient(NsbhProperties properties,
+                    WebClient.Builder webClientBuilder,
+                    ObjectMapper objectMapper,
+                    ToolRegistry toolRegistry) {
+        this.webClient = webClientBuilder
+                .baseUrl(properties.getLlm().getBaseUrl())
+                .defaultHeader(HttpHeaders.AUTHORIZATION,
+                        "Bearer " + properties.getLlm().getApiKey())
+                .defaultHeader(HttpHeaders.CONTENT_TYPE, "application/json")
+                .build();
+        this.timeoutMs = properties.getLlm().getTimeoutMs();
+        this.objectMapper = objectMapper;
+        this.toolRegistry = toolRegistry;
+    }
+
+    @Autowired
     public OpenAiLlmClient(WebClient.Builder webClientBuilder,
                            NsbhProperties properties,
                            ObjectMapper objectMapper,
