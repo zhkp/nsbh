@@ -1,5 +1,6 @@
 package com.kp.nsbh.agent;
 
+import com.kp.nsbh.tools.ToolCallReason;
 import com.kp.nsbh.tools.ToolCallStatus;
 import com.kp.nsbh.tools.ToolExecutionResult;
 import java.util.List;
@@ -15,7 +16,7 @@ public sealed interface AgentEvent permits
     record ToolStart(String toolName, String toolCallId) implements AgentEvent {}
 
     record ToolEnd(String toolName, String toolCallId,
-                   ToolCallStatus status, String result) implements AgentEvent {}
+                   ToolCallStatus status, ToolCallReason reason, String result) implements AgentEvent {}
 
     record Done(String fullText, List<ToolExecutionResult> toolResults) implements AgentEvent {}
 }

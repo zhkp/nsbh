@@ -1,6 +1,7 @@
 package com.kp.nsbh.agent;
 
 import com.kp.nsbh.memory.entity.MessageEntity;
+import com.kp.nsbh.memory.entity.MessageRole;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -32,6 +33,16 @@ public class MockLlmClient implements LlmClient {
         if (script != null) {
             int i = Math.min(scriptIndex.getAndIncrement(), script.size() - 1);
             return Mono.just(script.get(i));
+        }
+        // If there's already a TOOL result in the window, give a text reply (not another tool call)
+        boolean hasToolResult = memoryWindow.stream()
+                .anyMatch(m -> m.getRole() == MessageRole.TOOL);
+        if (hasToolResult) {
+            String toolContent = memoryWindow.stream()
+                    .filter(m -> m.getRole() == MessageRole.TOOL)
+                    .map(MessageEntity::getContent)
+                    .findFirst().orElse("");
+            return Mono.just(LlmReply.text("现在时间是: " + toolContent));
         }
         String lower = userMessage.toLowerCase(Locale.ROOT);
         Matcher matcher = URL_PATTERN.matcher(userMessage);

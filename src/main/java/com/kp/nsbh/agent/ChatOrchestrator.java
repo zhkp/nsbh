@@ -106,7 +106,7 @@ public class ChatOrchestrator {
                             .map(e -> {
                                 AgentEvent.ToolEnd te = (AgentEvent.ToolEnd) e;
                                 return new ToolExecutionResult(
-                                        te.toolName(), te.status(), null, te.result(), te.toolCallId());
+                                        te.toolName(), te.status(), te.reason(), te.result(), te.toolCallId());
                             })
                             .toList();
                     List<ToolExecutionResult> newAccumulated = new ArrayList<>(accumulated);
@@ -124,7 +124,7 @@ public class ChatOrchestrator {
         return toolService.execute(conversationId.toString(), tc.toolName(), tc.inputJson(), tc.id())
                 .flatMapMany(result -> {
                     AgentEvent.ToolEnd toolEnd = new AgentEvent.ToolEnd(
-                            result.toolName(), result.toolCallId(), result.status(), result.result());
+                            result.toolName(), result.toolCallId(), result.status(), result.reason(), result.result());
                     return messageRepository.save(toolMessage(conversationId, result))
                             .thenReturn((AgentEvent) toolEnd);
                 });
