@@ -17,6 +17,6 @@ public record LlmReply(String assistantMessage, List<ToolCallRequest> toolCalls)
     }
 
     public static LlmReply withTools(List<ToolCallRequest> toolCalls) {
-        return new LlmReply(null, toolCalls);
+        return new LlmReply(null, List.copyOf(toolCalls));
     }
 }
