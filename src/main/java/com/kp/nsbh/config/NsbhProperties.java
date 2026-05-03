@@ -10,6 +10,7 @@ public class NsbhProperties {
     private final Memory memory = new Memory();
     private final Tools tools = new Tools();
     private final Permissions permissions = new Permissions();
+    private final Agent agent = new Agent();
 
     public Llm getLlm() {
         return llm;
@@ -25,6 +26,10 @@ public class NsbhProperties {
 
     public Permissions getPermissions() {
         return permissions;
+    }
+
+    public Agent getAgent() {
+        return agent;
     }
 
     public static class Llm {
@@ -153,6 +158,18 @@ public class NsbhProperties {
 
         public void setGranted(List<String> granted) {
             this.granted = granted;
+        }
+    }
+
+    public static class Agent {
+        private int maxToolRounds = 10;
+
+        public int getMaxToolRounds() {
+            return maxToolRounds;
+        }
+
+        public void setMaxToolRounds(int maxToolRounds) {
+            this.maxToolRounds = maxToolRounds;
         }
     }
 }
