@@ -172,12 +172,4 @@ class ChatOrchestratorTest {
 
         return new ChatOrchestrator(llm, toolService, promptBuilder, memoryService, repo, props);
     }
-
-    private static MessageEntity normal(String content) {
-        MessageEntity m = new MessageEntity();
-        m.setRole(MessageRole.USER);
-        m.setType(MessageType.NORMAL);
-        m.setContent(content);
-        return m;
-    }
 }

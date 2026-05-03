@@ -11,7 +11,9 @@ import com.kp.nsbh.tools.ToolService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -60,8 +62,7 @@ public class ChatOrchestrator {
                 .flatMapMany(window ->
                         llmClient.firstReply(userMessage, model, window)
                                 .onErrorMap(LlmClientException.class,
-                                        e -> new org.springframework.web.server.ResponseStatusException(
-                                                org.springframework.http.HttpStatus.BAD_GATEWAY, e.getMessage()))
+                                        e -> new ResponseStatusException(HttpStatus.BAD_GATEWAY, e.getMessage()))
                                 .flatMapMany(reply -> {
                                     if (!reply.hasToolCalls()) {
                                         return handleFinalReply(conversationId, reply, accumulated);
