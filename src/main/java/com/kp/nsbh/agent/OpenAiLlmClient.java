@@ -18,6 +18,7 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @Service
@@ -90,6 +91,12 @@ public class OpenAiLlmClient implements LlmClient {
         return callOpenAi(request)
                 .map(this::firstMessage)
                 .map(message -> message.content() == null ? "" : message.content());
+    }
+
+    @Override
+    public Flux<String> streamFirstReply(String userMessage, String model,
+                                          List<MessageEntity> memoryWindow) {
+        throw new UnsupportedOperationException("streamFirstReply not yet implemented for OpenAiLlmClient");
     }
 
     @Override
