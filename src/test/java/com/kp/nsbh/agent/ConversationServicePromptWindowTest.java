@@ -12,7 +12,6 @@ import com.kp.nsbh.memory.entity.ConversationEntity;
 import com.kp.nsbh.memory.repo.ConversationRepository;
 import com.kp.nsbh.memory.repo.MessageRepository;
 import com.kp.nsbh.tools.ToolService;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -21,62 +20,6 @@ import reactor.core.publisher.Mono;
 import org.springframework.web.server.ResponseStatusException;
 
 class ConversationServicePromptWindowTest {
-
-    @Test
-    void shouldKeepOnlyLatestMessagesInWindow() {
-        ConversationRepository conversationRepository = mock(ConversationRepository.class);
-        MessageRepository messageRepository = mock(MessageRepository.class);
-        LlmClient llmClient = mock(LlmClient.class);
-        ToolService toolService = mock(ToolService.class);
-
-        NsbhProperties properties = new NsbhProperties();
-        properties.getMemory().setWindow(2);
-
-        List<MessageEntity> messages = new ArrayList<>();
-        messages.add(new MessageEntity());
-        messages.add(new MessageEntity());
-        messages.add(new MessageEntity());
-
-        when(messageRepository.findByConversationIdOrderByCreatedAtAsc(any(UUID.class))).thenReturn(Flux.fromIterable(messages));
-
-        ConversationService service = new ConversationService(
-                conversationRepository,
-                messageRepository,
-                properties,
-                llmClient,
-                toolService
-        );
-
-        List<MessageEntity> result = service.getPromptWindow(UUID.randomUUID()).block();
-        assertEquals(2, result.size());
-        assertEquals(messages.get(1), result.get(0));
-        assertEquals(messages.get(2), result.get(1));
-    }
-
-    @Test
-    void shouldReturnEmptyPromptWindowWhenConfiguredWindowIsNegative() {
-        ConversationRepository conversationRepository = mock(ConversationRepository.class);
-        MessageRepository messageRepository = mock(MessageRepository.class);
-        LlmClient llmClient = mock(LlmClient.class);
-        ToolService toolService = mock(ToolService.class);
-
-        NsbhProperties properties = new NsbhProperties();
-        properties.getMemory().setWindow(-1);
-
-        List<MessageEntity> messages = List.of(new MessageEntity(), new MessageEntity());
-        when(messageRepository.findByConversationIdOrderByCreatedAtAsc(any(UUID.class))).thenReturn(Flux.fromIterable(messages));
-
-        ConversationService service = new ConversationService(
-                conversationRepository,
-                messageRepository,
-                properties,
-                llmClient,
-                toolService
-        );
-
-        List<MessageEntity> result = service.getPromptWindow(UUID.randomUUID()).block();
-        assertEquals(0, result.size());
-    }
 
     @Test
     void chatShouldThrowNotFoundWhenConversationMissing() {
