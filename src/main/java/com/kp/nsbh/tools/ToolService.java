@@ -1,16 +1,19 @@
 package com.kp.nsbh.tools;
 
+import com.kp.nsbh.agent.ToolCallRequest;
 import com.kp.nsbh.config.NsbhProperties;
 import com.kp.nsbh.logging.JsonLogFormatter;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @Service
@@ -23,6 +26,13 @@ public class ToolService {
     public ToolService(ToolRegistry toolRegistry, NsbhProperties properties) {
         this.toolRegistry = toolRegistry;
         this.properties = properties;
+    }
+
+    public Flux<ToolExecutionResult> executeAll(String conversationId,
+                                                 List<ToolCallRequest> requests) {
+        return Flux.fromIterable(requests)
+                .flatMap(req -> execute(conversationId, req.toolName(),
+                        req.inputJson(), req.id()));
     }
 
     public Mono<ToolExecutionResult> execute(String conversationId, String toolName, String inputJson, String toolCallId) {
