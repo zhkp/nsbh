@@ -15,6 +15,7 @@ public class NsbhProperties {
     private final Agent agent = new Agent();
     private final Workspace workspace = new Workspace();
     private final Mcp mcp = new Mcp();
+    private final Api api = new Api();
 
     public Llm getLlm() { return llm; }
     public Memory getMemory() { return memory; }
@@ -23,6 +24,7 @@ public class NsbhProperties {
     public Agent getAgent() { return agent; }
     public Workspace getWorkspace() { return workspace; }
     public Mcp getMcp() { return mcp; }
+    public Api getApi() { return api; }
 
     public static class Llm {
         private String provider = "mock";
@@ -122,6 +124,13 @@ public class NsbhProperties {
 
         public List<McpServerConfig> getServers() { return servers; }
         public void setServers(List<McpServerConfig> servers) { this.servers = servers; }
+    }
+
+    public static class Api {
+        private String key = "";
+
+        public String getKey() { return key; }
+        public void setKey(String key) { this.key = key; }
     }
 
     public static class McpServerConfig {

@@ -56,6 +56,8 @@ nsbh:
       # - FS_READ
       # - FS_WRITE
       # - SHELL     # v1 禁用
+  api:
+    key: ${NSBH_API_KEY:}   # blank = no auth (local dev convenience)
 scheduler:
   dailySummary:
     enabled: false
