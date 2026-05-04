@@ -103,19 +103,15 @@ class HttpGetToolTest {
 
     @Test
     void isPrivateAddressShouldCoverIpv4AndIpv6Branches() throws Exception {
-        HttpGetTool tool = tool();
-        Method method = HttpGetTool.class.getDeclaredMethod("isPrivateAddress", InetAddress.class);
-        method.setAccessible(true);
-
-        assertTrue((Boolean) method.invoke(tool, InetAddress.getByName("0.0.0.0")));
-        assertTrue((Boolean) method.invoke(tool, InetAddress.getByName("10.0.0.1")));
-        assertTrue((Boolean) method.invoke(tool, InetAddress.getByName("100.64.0.1")));
-        assertTrue((Boolean) method.invoke(tool, InetAddress.getByName("198.18.0.1")));
-        assertTrue((Boolean) method.invoke(tool, InetAddress.getByName("192.0.2.1")));
-        assertTrue((Boolean) method.invoke(tool, InetAddress.getByName("224.0.0.1")));
-        assertTrue((Boolean) method.invoke(tool, InetAddress.getByName("fc00::1")));
-        assertTrue((Boolean) method.invoke(tool, InetAddress.getByName("::1")));
-        assertTrue((Boolean) method.invoke(tool, InetAddress.getByName("127.0.0.1")));
+        assertTrue(NetworkSafetyUtils.isPrivateAddress(InetAddress.getByName("0.0.0.0")));
+        assertTrue(NetworkSafetyUtils.isPrivateAddress(InetAddress.getByName("10.0.0.1")));
+        assertTrue(NetworkSafetyUtils.isPrivateAddress(InetAddress.getByName("100.64.0.1")));
+        assertTrue(NetworkSafetyUtils.isPrivateAddress(InetAddress.getByName("198.18.0.1")));
+        assertTrue(NetworkSafetyUtils.isPrivateAddress(InetAddress.getByName("192.0.2.1")));
+        assertTrue(NetworkSafetyUtils.isPrivateAddress(InetAddress.getByName("224.0.0.1")));
+        assertTrue(NetworkSafetyUtils.isPrivateAddress(InetAddress.getByName("fc00::1")));
+        assertTrue(NetworkSafetyUtils.isPrivateAddress(InetAddress.getByName("::1")));
+        assertTrue(NetworkSafetyUtils.isPrivateAddress(InetAddress.getByName("127.0.0.1")));
     }
 
     @Test
@@ -145,10 +141,8 @@ class HttpGetToolTest {
     void privateHelpersShouldCoverRemainingBranches() throws Exception {
         HttpGetTool tool = tool();
 
-        Method isPrivateAddress = HttpGetTool.class.getDeclaredMethod("isPrivateAddress", InetAddress.class);
-        isPrivateAddress.setAccessible(true);
-        assertTrue(!(Boolean) isPrivateAddress.invoke(tool, InetAddress.getByName("8.8.8.8")));
-        assertTrue(!(Boolean) isPrivateAddress.invoke(tool, InetAddress.getByName("2001:4860:4860::8888")));
+        assertTrue(!NetworkSafetyUtils.isPrivateAddress(InetAddress.getByName("8.8.8.8")));
+        assertTrue(!NetworkSafetyUtils.isPrivateAddress(InetAddress.getByName("2001:4860:4860::8888")));
 
         Method isRedirect = HttpGetTool.class.getDeclaredMethod("isRedirect", int.class);
         isRedirect.setAccessible(true);
