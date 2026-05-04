@@ -24,6 +24,9 @@ import reactor.core.scheduler.Schedulers;
 )
 public class ShellTool implements Tool {
 
+    private static final boolean IS_WINDOWS =
+            System.getProperty("os.name", "").toLowerCase().startsWith("windows");
+
     private static final List<String> BLOCKLIST = List.of(
             "sudo", "rm -rf /", "chmod 777 /", ">/dev/", "mkfs");
 
@@ -69,7 +72,10 @@ public class ShellTool implements Tool {
         int maxOutputBytes = properties.getTools().getShell().getMaxOutputBytes();
         long timeoutMs = properties.getTools().getTimeoutMs();
 
-        ProcessBuilder pb = new ProcessBuilder("sh", "-c", command)
+        String[] shellCmd = IS_WINDOWS
+                ? new String[]{"cmd.exe", "/c", command}
+                : new String[]{"sh", "-c", command};
+        ProcessBuilder pb = new ProcessBuilder(shellCmd)
                 .directory(workspaceRoot.toFile())
                 .redirectErrorStream(true);
 
