@@ -137,6 +137,16 @@ public class OpenAiLlmClient implements LlmClient {
     }
 
     @Override
+    public Mono<LlmReply> firstReply(List<MessageEntity> messages, String model) {
+        return firstReply("", model, messages);
+    }
+
+    @Override
+    public Flux<String> streamFirstReply(List<MessageEntity> messages, String model) {
+        return streamFirstReply("", model, messages);
+    }
+
+    @Override
     public Mono<String> summarize(List<MessageEntity> messages, String model) {
         List<ChatCompletionsInputMessage> prompt = new ArrayList<>();
         prompt.add(new ChatCompletionsInputMessage(

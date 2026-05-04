@@ -91,6 +91,16 @@ public class AnthropicLlmClient implements LlmClient {
     }
 
     @Override
+    public Mono<LlmReply> firstReply(List<MessageEntity> messages, String model) {
+        return firstReply("", model, messages);
+    }
+
+    @Override
+    public Flux<String> streamFirstReply(List<MessageEntity> messages, String model) {
+        return streamFirstReply("", model, messages);
+    }
+
+    @Override
     public Mono<String> summarize(List<MessageEntity> messages, String model) {
         List<MessageEntity> withSystem = new ArrayList<>();
         MessageEntity sys = new MessageEntity();

@@ -79,6 +79,30 @@ public class MockLlmClient implements LlmClient {
     }
 
     @Override
+    public Mono<LlmReply> firstReply(List<MessageEntity> messages, String model) {
+        if (script != null) {
+            int i = Math.min(scriptIndex.getAndIncrement(), script.size() - 1);
+            return Mono.just(script.get(i));
+        }
+        String lastUserContent = messages.stream()
+                .filter(m -> m.getRole() == MessageRole.USER)
+                .reduce((a, b) -> b)
+                .map(MessageEntity::getContent)
+                .orElse("");
+        return Mono.just(LlmReply.text("Mock: " + lastUserContent));
+    }
+
+    @Override
+    public Flux<String> streamFirstReply(List<MessageEntity> messages, String model) {
+        return firstReply(messages, model)
+                .flatMapMany(reply -> {
+                    String msg = reply.assistantMessage();
+                    if (msg == null || msg.isBlank()) return Flux.empty();
+                    return Flux.just(msg);
+                });
+    }
+
+    @Override
     public Mono<String> summarize(List<MessageEntity> messages, String model) {
         return Mono.just("SUMMARY messages=" + messages.size());
     }

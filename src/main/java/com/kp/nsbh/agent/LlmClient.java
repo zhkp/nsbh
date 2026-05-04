@@ -55,6 +55,11 @@ public interface LlmClient {
     Flux<String> streamFirstReply(String userMessage, String model,
                                    List<MessageEntity> memoryWindow);
 
+    // Stateless overloads: full message list used as context directly, no userMessage separation
+    Mono<LlmReply> firstReply(List<MessageEntity> messages, String model);
+
+    Flux<String> streamFirstReply(List<MessageEntity> messages, String model);
+
     /**
      * 对消息列表进行摘要总结。
      *
