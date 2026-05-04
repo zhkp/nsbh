@@ -44,4 +44,11 @@ class ListFilesToolTest {
         assertThrows(IllegalArgumentException.class,
                 () -> tool(root).execute("{\"path\":\"../\"}").block());
     }
+
+    @Test
+    void nullInputJsonDefaultsToRoot(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve("a.txt"), "a");
+        String result = tool(root).execute(null).block();
+        assertTrue(result.contains("a.txt"));
+    }
 }

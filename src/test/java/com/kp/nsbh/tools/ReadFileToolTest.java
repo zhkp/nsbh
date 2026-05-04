@@ -42,4 +42,21 @@ class ReadFileToolTest {
         assertThrows(IllegalArgumentException.class,
                 () -> tool(root).execute("{\"path\":\"\"}").block());
     }
+
+    @Test
+    void truncatesOversizedFile(@TempDir Path root) throws Exception {
+        NsbhProperties props = new NsbhProperties();
+        props.getWorkspace().setRoot(root.toString());
+        props.getTools().setMaxOutputBytes(5);
+        ReadFileTool t = new ReadFileTool(new WorkspaceService(props), props);
+        Files.writeString(root.resolve("big.txt"), "0123456789");
+        String result = t.execute("{\"path\":\"big.txt\"}").block();
+        assertTrue(result.contains("[truncated]"));
+    }
+
+    @Test
+    void nullInputJsonIsRejectedAsBlankPath(@TempDir Path root) {
+        assertThrows(IllegalArgumentException.class,
+                () -> tool(root).execute(null).block());
+    }
 }

@@ -39,4 +39,16 @@ class RequestIdSupportUnitTest {
         assertEquals("", RequestIdSupport.currentRequestId(exchange));
         assertEquals("", RequestIdSupport.currentRequestId());
     }
+
+    @Test
+    void shouldFallbackToMdcWhenExchangeAttributeIsBlank() {
+        MockServerWebExchange exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/x").build());
+        exchange.getAttributes().put(RequestIdFilter.REQUEST_ID_KEY, "   ");
+        MDC.put(RequestIdFilter.REQUEST_ID_KEY, "req-mdc");
+        try {
+            assertEquals("req-mdc", RequestIdSupport.currentRequestId(exchange));
+        } finally {
+            MDC.clear();
+        }
+    }
 }

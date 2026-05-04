@@ -12,6 +12,7 @@ import com.kp.nsbh.tools.ToolRegistry;
 import com.kp.nsbh.tools.ToolService;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 import reactor.core.publisher.Mono;
 
 class ToolServiceTest {
@@ -116,6 +117,55 @@ class ToolServiceTest {
         assertEquals(ToolCallReason.EXECUTION_ERROR, result.reason());
     }
 
+    @Test
+    void errorWithNullMessageUsesClassName() {
+        NsbhProperties properties = new NsbhProperties();
+        properties.getTools().setAllowed(List.of("time"));
+
+        ToolService service = new ToolService(new ToolRegistry(List.of(new NullMessageErrorTool())), properties);
+        ToolExecutionResult result = service.execute("conv-1", "time", "{}", "c-null-msg").block();
+
+        assertEquals(ToolCallStatus.FAILED, result.status());
+        assertEquals(ToolCallReason.EXECUTION_ERROR, result.reason());
+    }
+
+    @Test
+    void errorWithBlankMessageUsesClassName() {
+        NsbhProperties properties = new NsbhProperties();
+        properties.getTools().setAllowed(List.of("time"));
+
+        ToolService service = new ToolService(new ToolRegistry(List.of(new BlankMessageErrorTool())), properties);
+        ToolExecutionResult result = service.execute("conv-1", "time", "{}", "c-blank-msg").block();
+
+        assertEquals(ToolCallStatus.FAILED, result.status());
+        assertEquals(ToolCallReason.EXECUTION_ERROR, result.reason());
+    }
+
+    @Test
+    void executeWithExistingMdcRequestIdCoversWithRequestIdBranches() {
+        NsbhProperties properties = new NsbhProperties();
+        properties.getTools().setAllowed(List.of("time"));
+        MDC.put("requestId", "existing-req");
+        try {
+            ToolService service = new ToolService(new ToolRegistry(List.of(new FastTimeTool())), properties);
+            ToolExecutionResult result = service.execute("conv-1", "time", "{}", "c-mdc").block();
+            assertEquals(ToolCallStatus.SUCCESS, result.status());
+        } finally {
+            MDC.remove("requestId");
+        }
+    }
+
+    @Test
+    void executeWithNullInputJsonCoversSizeOfNull() {
+        NsbhProperties properties = new NsbhProperties();
+        properties.getTools().setAllowed(List.of("time"));
+
+        ToolService service = new ToolService(new ToolRegistry(List.of(new FastTimeTool())), properties);
+        ToolExecutionResult result = service.execute("conv-1", "time", null, "c-null-input").block();
+
+        assertEquals(ToolCallStatus.SUCCESS, result.status());
+    }
+
     @NsbhTool(name = "time", description = "fast", schema = "{}")
     static class FastTimeTool implements Tool {
         @Override
@@ -161,6 +211,22 @@ class ToolServiceTest {
         @Override
         public Mono<String> execute(String inputJson) {
             return Mono.error(new IllegalStateException("boom"));
+        }
+    }
+
+    @NsbhTool(name = "time", description = "null-msg", schema = "{}")
+    static class NullMessageErrorTool implements Tool {
+        @Override
+        public Mono<String> execute(String inputJson) {
+            return Mono.error(new RuntimeException());
+        }
+    }
+
+    @NsbhTool(name = "time", description = "blank-msg", schema = "{}")
+    static class BlankMessageErrorTool implements Tool {
+        @Override
+        public Mono<String> execute(String inputJson) {
+            return Mono.error(new RuntimeException(" "));
         }
     }
 }

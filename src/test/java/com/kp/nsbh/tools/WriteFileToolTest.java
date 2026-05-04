@@ -43,4 +43,16 @@ class WriteFileToolTest {
         assertThrows(IllegalArgumentException.class,
                 () -> tool(root).execute("{\"path\":\"\",\"content\":\"x\"}").block());
     }
+
+    @Test
+    void returnsCorrectByteCount(@TempDir Path root) throws Exception {
+        String result = tool(root).execute("{\"path\":\"f.txt\",\"content\":\"ab\"}").block();
+        assertTrue(result.contains("\"bytes\":2"));
+    }
+
+    @Test
+    void nullInputJsonIsRejectedAsBlankPath(@TempDir Path root) {
+        assertThrows(IllegalArgumentException.class,
+                () -> tool(root).execute(null).block());
+    }
 }
