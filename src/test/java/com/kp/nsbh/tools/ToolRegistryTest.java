@@ -46,6 +46,28 @@ class ToolRegistryTest {
         assertTrue(ex.getMessage().contains("Duplicate tool name"));
     }
 
+    @Test
+    void registerDynamicToolAddsToRegistry() {
+        ToolRegistry registry = new ToolRegistry(List.of());
+        ToolMetadata meta = new ToolMetadata("dynamic", "a dynamic tool", "{}", List.of());
+        Tool tool = inputJson -> reactor.core.publisher.Mono.just("ok");
+
+        registry.register(meta, tool);
+
+        assertNotNull(registry.findTool("dynamic"));
+        assertEquals("dynamic", registry.findMetadata("dynamic").name());
+        assertTrue(registry.listMetadata().stream().anyMatch(m -> "dynamic".equals(m.name())));
+    }
+
+    @Test
+    void registerDuplicateNameThrows() {
+        ToolRegistry registry = new ToolRegistry(List.of(new TimeTool()));
+        ToolMetadata meta = new ToolMetadata("time", "dup", "{}", List.of());
+        Tool tool = inputJson -> reactor.core.publisher.Mono.just("ok");
+
+        assertThrows(IllegalStateException.class, () -> registry.register(meta, tool));
+    }
+
     static class MissingAnnotationTool implements Tool {
         @Override
         public reactor.core.publisher.Mono<String> execute(String inputJson) {

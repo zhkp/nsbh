@@ -39,8 +39,17 @@ public class ToolRegistry {
             ));
         }
 
-        this.toolByName = Map.copyOf(toolMap);
-        this.metadataByName = Map.copyOf(metadataMap);
+        this.toolByName = toolMap;
+        this.metadataByName = metadataMap;
+    }
+
+    public synchronized void register(ToolMetadata metadata, Tool tool) {
+        String name = metadata.name();
+        if (toolByName.containsKey(name)) {
+            throw new IllegalStateException("Duplicate tool name: " + name);
+        }
+        toolByName.put(name, tool);
+        metadataByName.put(name, metadata);
     }
 
     public Tool findTool(String name) {
